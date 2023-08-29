@@ -35,7 +35,6 @@
 #include "synaptics_tcm_core.h"
 
 /* add check F7A LCM by wanghan start */
-extern bool lct_syna_verify_flag;
 extern bool synaptics_gesture_enable_flag;
 /* add check F7A LCM by wanghan end */
 
@@ -644,10 +643,8 @@ static void touch_report(void)
 
 	if (touch_data->gesture_double_tap && tcm_hcd->in_suspend) {
 		input_report_key(touch_hcd->input_dev, KEY_WAKEUP, 1);
-		input_report_key(touch_hcd->input_dev, KEY_DOUBLE_TAP, 1);
 		input_sync(touch_hcd->input_dev);
 		input_report_key(touch_hcd->input_dev, KEY_WAKEUP, 0);
-		input_report_key(touch_hcd->input_dev, KEY_DOUBLE_TAP, 0);
 		input_sync(touch_hcd->input_dev);
 		LOGV("Double Tap\n");
 	}
@@ -861,9 +858,7 @@ static int touch_set_input_dev(void)
 #endif
 
 	set_bit(KEY_WAKEUP, touch_hcd->input_dev->keybit);
-	set_bit(KEY_DOUBLE_TAP, touch_hcd->input_dev->keybit);
 	input_set_capability(touch_hcd->input_dev, EV_KEY, KEY_WAKEUP);
-	input_set_capability(touch_hcd->input_dev, EV_KEY, KEY_DOUBLE_TAP);
 	touch_hcd->input_dev->event = synaptics_gesture_switch;
 
 	retval = touch_set_input_params();
@@ -1321,10 +1316,6 @@ static int __init touch_module_init(void)
 {
 	int retval;
 	LOG_ENTRY();
-	/* add check F7A LCM by wanghan start */
-	if(!lct_syna_verify_flag)
-		return -ENODEV;
-	/* add check F7A LCM by wanghan end */
 	LOGV("__init touch module\n");
 	retval =  syna_tcm_add_module(&touch_module, true);
 	if(retval) {

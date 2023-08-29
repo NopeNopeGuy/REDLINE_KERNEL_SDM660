@@ -49,7 +49,7 @@
 #include <asm/param.h>		/* HZ */
 #include <asm/led.h>
 #include <asm/pdc.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 /* The control of the LEDs and LCDs on PARISC-machines have to be done 
    completely in software. The necessary calculations are done in a work queue
@@ -141,6 +141,9 @@ static int start_task(void)
 
 	/* Create the work queue and queue the LED task */
 	led_wq = create_singlethread_workqueue("led_wq");	
+	if (!led_wq)
+		return -ENOMEM;
+
 	queue_delayed_work(led_wq, &led_task, 0);
 
 	return 0;
@@ -176,7 +179,7 @@ static int led_proc_open(struct inode *inode, struct file *file)
 }
 
 
-static ssize_t led_proc_write(struct file *file, const char *buf,
+static ssize_t led_proc_write(struct file *file, const char __user *buf,
 	size_t count, loff_t *pos)
 {
 	void *data = PDE_DATA(file_inode(file));
@@ -250,7 +253,7 @@ static int __init led_create_procfs(void)
 
 	if (led_type == -1) return -1;
 
-	proc_pdc_root = proc_mkdir("pdc", 0);
+	proc_pdc_root = proc_mkdir("pdc", NULL);
 	if (!proc_pdc_root) return -1;
 
 	if (!lcd_no_led_support)
@@ -568,6 +571,9 @@ int __init register_led_driver(int model, unsigned long cmd_reg, unsigned long d
 		break;
 
 	case DISPLAY_MODEL_LASI:
+		/* Skip to register LED in QEMU */
+		if (running_on_qemu)
+			return 1;
 		LED_DATA_REG = data_reg;
 		led_func_ptr = led_LASI_driver;
 		printk(KERN_INFO "LED display at %lx registered\n", LED_DATA_REG);

@@ -18,7 +18,12 @@ config CPU_FREQ
 
 if CPU_FREQ
 
+config CPU_FREQ_GOV_ATTR_SET
+	bool
+
 config CPU_FREQ_GOV_COMMON
+	select CPU_FREQ_GOV_ATTR_SET
+	select IRQ_WORK
 	bool
 
 config CPU_FREQ_BOOST_SW
@@ -26,25 +31,18 @@ config CPU_FREQ_BOOST_SW
 	depends on THERMAL
 
 config CPU_FREQ_STAT
-	tristate "CPU frequency translation statistics"
-	default y
+	bool "CPU frequency transition statistics"
 	help
-	  This driver exports CPU frequency statistics information through sysfs
-	  file system.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_stats.
+	  Export CPU frequency statistics information through sysfs.
 
 	  If in doubt, say N.
 
-config CPU_FREQ_STAT_DETAILS
-	bool "CPU frequency translation statistics details"
-	depends on CPU_FREQ_STAT
-	help
-	  This will show detail CPU frequency translation table in sysfs file
-	  system.
+config CPU_FREQ_TIMES
+       bool "CPU frequency time-in-state statistics"
+       help
+         Export CPU time-in-state information through procfs.
 
-	  If in doubt, say N.
+         If in doubt, say N.
 
 choice
 	prompt "Default CPUFreq governor"
@@ -103,15 +101,6 @@ config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	  governor. If unsure have a look at the help section of the
 	  driver. Fallback governor will be the performance governor.
 
-config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
-	bool "interactive"
-	select CPU_FREQ_GOV_INTERACTIVE
-	help
-	  Use the CPUFreq governor 'interactive' as default. This allows
-	  you to get a full dynamic cpu frequency capable system by simply
-	  loading your cpufreq low-level hardware driver, using the
-	  'interactive' governor for latency-sensitive workloads.
-
 config CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
 	bool "schedutil"
 	depends on SMP
@@ -121,6 +110,17 @@ config CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
 	  Use the 'schedutil' CPUFreq governor by default. If unsure,
 	  have a look at the help section of that governor. The fallback
 	  governor will be 'performance'.
+	  
+config CPU_FREQ_DEFAULT_GOV_SCHEDHORIZON
+	bool "schedhorizon"
+	depends on SMP
+	select CPU_FREQ_GOV_SCHEDHORIZON
+	select CPU_FREQ_GOV_PERFORMANCE
+	help
+	  Use the 'schedhorizon' CPUFreq governor by default. If unsure,
+	  have a look at the help section of that governor. The fallback
+	  governor will be 'performance'.
+
 endchoice
 
 config CPU_FREQ_GOV_PERFORMANCE
@@ -178,20 +178,6 @@ config CPU_FREQ_GOV_ONDEMAND
 
 	  If in doubt, say N.
 
-config CPU_FREQ_GOV_INTERACTIVE
-	bool "'interactive' cpufreq policy governor"
-	help
-	  'interactive' - This driver adds a dynamic cpufreq policy governor
-	  designed for latency-sensitive workloads.
-
-	  This governor attempts to reduce the latency of clock
-	  increases so that the system is more responsive to
-	  interactive workloads.
-
-	  For details, take a look at linux/Documentation/cpu-freq.
-
-	  If in doubt, say N.
-
 config CPU_FREQ_GOV_CONSERVATIVE
 	tristate "'conservative' cpufreq governor"
 	depends on CPU_FREQ
@@ -216,6 +202,17 @@ config CPU_FREQ_GOV_CONSERVATIVE
 
 	  If in doubt, say N.
 
+config CPU_BOOST
+	tristate "Event base short term CPU freq boost"
+	depends on CPU_FREQ
+	help
+	  This driver boosts the frequency of one or more CPUs based on
+	  various events that might occur in the system. As of now, the
+	  events it reacts to are:
+	  - Migration of important threads from one CPU to another.
+
+	  If in doubt, say N.
+
 config CPU_FREQ_GOV_SCHEDUTIL
 	bool "'schedutil' cpufreq policy governor"
 	depends on CPU_FREQ && SMP
@@ -233,81 +230,96 @@ config CPU_FREQ_GOV_SCHEDUTIL
 
 	  If in doubt, say N.
 
-config CPU_INPUT_BOOST
-	bool "CPU Input Boost"
+config CPU_FREQ_GOV_SCHEDHORIZON
+	bool "'schedhorizon' cpufreq policy governor"
+	depends on CPU_FREQ && SMP
+	select CPU_FREQ_GOV_ATTR_SET
+	select IRQ_WORK
 	help
-	  Boosts the CPU on touchscreen and touchpad input, and allows for
-	  boosting on other custom events, mainly which is intended to be for
-	  boosting when there is a new frame ready to be rendered to the
-	  display. The boost frequencies for this driver should be set so that
-	  frame drops are near-zero at the boosted frequencies and power
-	  consumption is minimized at said frequency combination.
+	  This is a modified version of schedutil, introducing two new tunables: 
+          "efficient_freq" and "up_delay".
 
-if CPU_INPUT_BOOST
+          Only raise cpufreq to the non-efficient one (higher than effcient frequencies) 
+          if the governor keeps requiring non-efficient frequencies for more than up_delay time.
 
-config INPUT_BOOST_DURATION_MS
-	int "Input boost duration"
-	default "100"
+          Override the new frequencies with the efficient one if the consecutive request time 
+          doesn't reach up_delay.
+
+          The two tunables support multiple args, e.g. you can set "1248000 1401600" for 
+          "efficient_freq" and set "50 60" for "up_delay", which means it would wait 50ms 
+          before raising the frequency to 1248mhz and wait for 60ms before raising the frequency 
+          to 1401mhz.
+
+	  If in doubt, say N.
+
+if CPU_FREQ_GOV_SCHEDHORIZON
+
+config SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_LP
+	int "Default efficient frequency for the lp cluster"
+	default 1536000
 	help
-	  Input boost duration in milliseconds.
+	  This sets schedhorizon's default efficient frequency for the lp
+	  cluster. This frequency needs to be set according to the available
+	  frequencies at cpufreq-table-0 for the little cores.
 
-config WAKE_BOOST_DURATION_MS
-	int "Wake boost duration"
-	default "1000"
+config SCHEDHORIZON_DEFAULT_EFFICIENT_FREQ_HP
+	int "Default efficient frequency for the hp cluster"
+	default 1958400
 	help
-	  Wake boost duration in milliseconds.
+	  This sets schedhorizon's default efficient frequency for the hp
+	  cluster. This frequency needs to be set according to the available
+	  frequencies at cpufreq-table-4 for the big cores.
 
-config INPUT_BOOST_FREQ_LP
-	int "Low-power cluster boost freq"
-	default "0"
+config SCHEDHORIZON_DEFAULT_UP_DELAY_LP
+	int "Default multiplicand of the up delay for the lp cluster"
+	default 3
 	help
-	  Input boost frequency for the low-power CPU cluster.
+	  This sets schedhorizon's default up delay for the lp cluster where
+	  the default value acts as a multiplicand which is to be multiplied
+	  by the number of nanosecond in one milisecond (NSEC_PER_MSEC).
 
-config INPUT_BOOST_FREQ_PERF
-	int "Performance cluster boost freq"
-	default "0"
+config SCHEDHORIZON_DEFAULT_UP_DELAY_HP
+	int "Default multiplicand of the up delay for the hp cluster"
+	default 3
 	help
-	  Input boost frequency for the performance CPU cluster.
-
-config MAX_BOOST_FREQ_LP
-	int "Low-power cluster max-boost freq"
-	default "0"
-	help
-	  Max-boost frequency for the low-power CPU cluster.
-
-config MAX_BOOST_FREQ_PERF
-	int "Performance cluster max-boost freq"
-	default "0"
-	help
-	  Max-boost frequency for the performance CPU cluster.
-
+	  This sets schedhorizon's default up delay for the hp cluster where
+	  the default value acts as a multiplicand which is to be multiplied
+	  by the number of nanosecond in one milisecond (NSEC_PER_MSEC).
 endif
 
 comment "CPU frequency scaling drivers"
-
-config CPU_BOOST
-	tristate "Event base short term CPU freq boost"
-	depends on CPU_FREQ
-	help
-	  This driver boosts the frequency of one or more CPUs based on
-	  various events that might occur in the system. As of now, the
-	  events it reacts to are:
-	  - Migration of important threads from one CPU to another.
-
-	  If in doubt, say N.
 
 config CPUFREQ_DT
 	tristate "Generic DT based cpufreq driver"
 	depends on HAVE_CLK && OF
 	# if CPU_THERMAL is on and THERMAL=m, CPUFREQ_DT cannot be =y:
 	depends on !CPU_THERMAL || THERMAL
+	select CPUFREQ_DT_PLATDEV
 	select PM_OPP
 	help
 	  This adds a generic DT based cpufreq driver for frequency management.
 	  It supports both uniprocessor (UP) and symmetric multiprocessor (SMP)
-	  systems which share clock and voltage across all CPUs.
+	  systems.
 
 	  If in doubt, say N.
+
+config CPUFREQ_DT_PLATDEV
+	bool
+	help
+	  This adds a generic DT based cpufreq platdev driver for frequency
+	  management.  This creates a 'cpufreq-dt' platform device, on the
+	  supported platforms.
+
+	  If in doubt, say N.
+
+config CPUFREQ_DUMMY
+	tristate "Dummy CPU frequency driver"
+	help
+	  This option adds a generic dummy CPUfreq driver, which sets a fake
+	  2-frequency table when initializing each policy and otherwise does
+	  nothing.
+
+	  If in doubt, say N
 
 if X86
 source "drivers/cpufreq/Kconfig.x86"
@@ -319,16 +331,6 @@ endif
 
 if PPC32 || PPC64
 source "drivers/cpufreq/Kconfig.powerpc"
-endif
-
-if AVR32
-config AVR32_AT32AP_CPUFREQ
-	bool "CPU frequency driver for AT32AP"
-	depends on PLATFORM_AT32AP
-	default n
-	help
-	  This enables the CPU frequency driver for AT32AP processors.
-	  If in doubt, say N.
 endif
 
 if IA64
@@ -345,6 +347,16 @@ config IA64_ACPI_CPUFREQ
 endif
 
 if MIPS
+config BMIPS_CPUFREQ
+	tristate "BMIPS CPUfreq Driver"
+	help
+	  This option adds a CPUfreq driver for BMIPS processors with
+	  support for configurable CPU frequency.
+
+	  For now, BMIPS5 chips are supported (such as the Broadcom 7425).
+
+	  If in doubt, say N.
+
 config LOONGSON2_CPUFREQ
 	tristate "Loongson2 CPUFreq Driver"
 	depends on LEMOTE_MACH2F
@@ -408,7 +420,8 @@ endif
 
 config QORIQ_CPUFREQ
 	tristate "CPU frequency scaling driver for Freescale QorIQ SoCs"
-	depends on OF && COMMON_CLK && (PPC_E500MC || ARM)
+	depends on OF && COMMON_CLK && (PPC_E500MC || ARM || ARM64)
+	depends on !CPU_THERMAL || THERMAL
 	select CLK_QORIQ
 	help
 	  This adds the CPUFreq driver support for Freescale QorIQ SoCs

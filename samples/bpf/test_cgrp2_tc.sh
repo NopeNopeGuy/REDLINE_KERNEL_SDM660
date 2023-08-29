@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
 
 MY_DIR=$(dirname $0)
 # Details on the bpf prog
@@ -114,7 +115,7 @@ do_exit() {
     if [ "$DEBUG" == "yes" ] && [ "$MODE" != 'cleanuponly' ]
     then
 	echo "------ DEBUG ------"
-	echo "mount: "; mount | egrep '(cgroup2|bpf)'; echo
+	echo "mount: "; mount | grep -E '(cgroup2|bpf)'; echo
 	echo "$CGRP2_TC_LEAF: "; ls -l $CGRP2_TC_LEAF; echo
 	if [ -d "$BPF_FS_TC_SHARE" ]
 	then

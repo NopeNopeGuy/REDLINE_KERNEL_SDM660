@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    tape device driver for 3480/3490E/3590 tapes.
  *
@@ -33,7 +34,7 @@ do { \
 	debug_sprintf_event(TAPE_DBF_AREA, level, str, ## __VA_ARGS__); \
 } while (0)
 #else
-#define DBF_LH(level, str, ...) do {} while(0)
+#define DBF_LH(level, str, ...) ((void)0)
 #endif
 
 /*
@@ -128,6 +129,7 @@ struct tape_request {
 	int options;			/* options for execution. */
 	int retries;			/* retry counter for error recovery. */
 	int rescnt;			/* residual count from devstat. */
+	struct timer_list timer;	/* timer for std_assign_timeout(). */
 
 	/* Callback for delivering final status. */
 	void (*callback)(struct tape_request *, void *);

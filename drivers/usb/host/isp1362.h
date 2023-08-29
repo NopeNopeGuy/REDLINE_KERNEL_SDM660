@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ISP1362 HCD (Host Controller Driver) for USB.
  *
@@ -5,49 +6,6 @@
  */
 
 /* ------------------------------------------------------------------------- */
-/*
- * Platform specific compile time options
- */
-#if defined(CONFIG_BLACKFIN)
-
-#include <linux/io.h>
-#define USE_32BIT		0
-#define MAX_ROOT_PORTS		2
-#define USE_PLATFORM_DELAY	0
-#define USE_NDELAY		1
-
-#define DUMMY_DELAY_ACCESS \
-	do { \
-		bfin_read16(ASYNC_BANK0_BASE); \
-		bfin_read16(ASYNC_BANK0_BASE); \
-		bfin_read16(ASYNC_BANK0_BASE); \
-	} while (0)
-
-#undef insw
-#undef outsw
-
-#define insw  delayed_insw
-#define outsw  delayed_outsw
-
-static inline void delayed_outsw(unsigned int addr, void *buf, int len)
-{
-	unsigned short *bp = (unsigned short *)buf;
-	while (len--) {
-		DUMMY_DELAY_ACCESS;
-		outw(*bp++, addr);
-	}
-}
-
-static inline void delayed_insw(unsigned int addr, void *buf, int len)
-{
-	unsigned short *bp = (unsigned short *)buf;
-	while (len--) {
-		DUMMY_DELAY_ACCESS;
-		*bp++ = inw(addr);
-	}
-}
-
-#else
 
 #define MAX_ROOT_PORTS		2
 
@@ -57,10 +15,7 @@ static inline void delayed_insw(unsigned int addr, void *buf, int len)
 #define USE_PLATFORM_DELAY	0
 #define USE_NDELAY		0
 
-#define DUMMY_DELAY_ACCESS do {} while (0)
-
-#endif
-
+#define DUMMY_DELAY_ACCESS ((void)0)
 
 /* ------------------------------------------------------------------------- */
 
@@ -103,8 +58,8 @@ typedef const unsigned char isp1362_reg_t;
 #define ISP1362_REG(name, addr, width, rw) \
 static isp1362_reg_t ISP1362_REG_##name = addr
 
-#define REG_ACCESS_TEST(r)		do {} while (0)
-#define REG_WIDTH_TEST(r, w)		do {} while (0)
+#define REG_ACCESS_TEST(r)		((void)0)
+#define REG_WIDTH_TEST(r, w)		((void)0)
 #endif
 
 /* OHCI compatible registers */
@@ -591,19 +546,19 @@ static inline struct usb_hcd *isp1362_hcd_to_hcd(struct isp1362_hcd *isp1362_hcd
 #ifdef VERBOSE
 #    define VDBG(fmt...)	DBG(3, fmt)
 #else
-#    define VDBG(fmt...)	do {} while (0)
+#    define VDBG(fmt...)	((void)0)
 #endif
 
 #ifdef REGISTERS
 #    define RDBG(fmt...)	DBG(1, fmt)
 #else
-#    define RDBG(fmt...)	do {} while (0)
+#    define RDBG(fmt...)	((void)0)
 #endif
 
 #ifdef URB_TRACE
 #define URB_DBG(fmt...)		DBG(0, fmt)
 #else
-#define URB_DBG(fmt...)		do {} while (0)
+#define URB_DBG(fmt...)		((void)0)
 #endif
 
 
@@ -615,7 +570,7 @@ static inline struct usb_hcd *isp1362_hcd_to_hcd(struct isp1362_hcd *isp1362_hcd
 #elif USE_NDELAY
 #define	isp1362_delay(h, d)	ndelay(d)
 #else
-#define	isp1362_delay(h, d)	do {} while (0)
+#define	isp1362_delay(h, d)	((void)0)
 #endif
 
 #define get_urb(ep) ({							\
@@ -1006,9 +961,9 @@ static void dump_ptd_queue(struct isp1362_ep_queue *epq)
 	dbg_level = dbg;
 }
 #else
-#define dump_ptd(ptd)			do {} while (0)
-#define dump_ptd_in_data(ptd, buf)	do {} while (0)
-#define dump_ptd_out_data(ptd, buf)	do {} while (0)
-#define dump_ptd_data(ptd, buf)		do {} while (0)
-#define dump_ptd_queue(epq)		do {} while (0)
+#define dump_ptd(ptd)			((void)0)
+#define dump_ptd_in_data(ptd, buf)	((void)0)
+#define dump_ptd_out_data(ptd, buf)	((void)0)
+#define dump_ptd_data(ptd, buf)		((void)0)
+#define dump_ptd_queue(epq)		((void)0)
 #endif

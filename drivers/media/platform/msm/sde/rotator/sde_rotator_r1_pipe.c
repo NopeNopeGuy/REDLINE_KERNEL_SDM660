@@ -1,14 +1,6 @@
-/* Copyright (c) 2012, 2015-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012, 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"%s: " fmt, __func__
@@ -58,8 +50,8 @@ static int sde_mdp_pipe_qos_lut(struct sde_mdp_pipe *pipe)
 
 	qos_lut = QOS_LUT_NRT_READ; /* low priority for nrt */
 
-	//trace_rot_perf_set_qos_luts(pipe->num, pipe->src_fmt->format,
-	//	qos_lut, sde_mdp_is_linear_format(pipe->src_fmt));
+	trace_rot_perf_set_qos_luts(pipe->num, pipe->src_fmt->format,
+		qos_lut, sde_mdp_is_linear_format(pipe->src_fmt));
 
 	sde_mdp_pipe_write(pipe, SDE_MDP_REG_SSPP_CREQ_LUT,
 		qos_lut);

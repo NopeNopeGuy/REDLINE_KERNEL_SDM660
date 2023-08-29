@@ -1,6 +1,7 @@
 /* drivers/misc/timed_output.c
  *
  * Copyright (C) 2009 Google, Inc.
+ * Copyright (C) 2020 XiaoMi, Inc.
  * Author: Mike Lockwood <lockwood@android.com>
  *
  * This software is licensed under the terms of the GNU General Public

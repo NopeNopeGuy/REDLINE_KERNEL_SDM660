@@ -29,6 +29,7 @@
 #include <linux/compat.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/acpi.h>
 
 #include <linux/spi/spi.h>
 #include <linux/spi/spidev.h>
@@ -89,7 +90,11 @@ struct spidev_data {
 static LIST_HEAD(device_list);
 static DEFINE_MUTEX(device_list_lock);
 
-static unsigned bufsiz = 4096*8;
+#ifdef CONFIG_MACH_LONGCHEER
+static unsigned bufsiz = 4096 * 8;
+#else
+static unsigned bufsiz = 4096;
+#endif
 module_param(bufsiz, uint, S_IRUGO);
 MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 
@@ -98,7 +103,6 @@ MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 static ssize_t
 spidev_sync(struct spidev_data *spidev, struct spi_message *message)
 {
-	DECLARE_COMPLETION_ONSTACK(done);
 	int status;
 	struct spi_device *spi;
 
@@ -123,9 +127,13 @@ spidev_sync_write(struct spidev_data *spidev, size_t len)
 	struct spi_transfer	t = {
 			.tx_buf		= spidev->tx_buffer,
 			.len		= len,
-			.delay_usecs = 0,
-			.cs_change   = 0,
-			.speed_hz   = 960000,
+#ifdef CONFIG_MACH_LONGCHEER
+			.delay_usecs	= 0,
+			.cs_change	= 0,
+			.speed_hz	= 960000,
+#else
+			.speed_hz	= spidev->speed_hz,
+#endif
 		};
 	struct spi_message	m;
 
@@ -165,7 +173,7 @@ spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 	spidev = filp->private_data;
 
 	mutex_lock(&spidev->buf_lock);
-
+#ifdef CONFIG_MACH_LONGCHEER
 	if (!spidev->rx_buffer) {
 		spidev->rx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->rx_buffer) {
@@ -174,7 +182,7 @@ spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 			goto read_unlock;
 		}
 	}
-
+#endif
 	status = spidev_sync_read(spidev, count);
 	if (status > 0) {
 		unsigned long	missing;
@@ -185,12 +193,11 @@ spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 		else
 			status = status - missing;
 	}
-
+#ifdef CONFIG_MACH_LONGCHEER
 	kfree(spidev->rx_buffer);
 	spidev->rx_buffer = NULL;
-
 read_unlock:
-
+#endif
 	mutex_unlock(&spidev->buf_lock);
 
 	return status;
@@ -206,15 +213,15 @@ spidev_write(struct file *filp, const char __user *buf,
 	unsigned long		missing;
 
 	/* chipselect only toggles at start or end of operation */
-/*  liuhongtao removed for buffer kmalloc size
+#ifndef CONFIG_MACH_LONGCHEER
 	if (count > bufsiz)
 		return -EMSGSIZE;
-*/
+#endif
 
 	spidev = filp->private_data;
 
 	mutex_lock(&spidev->buf_lock);
-
+#ifdef CONFIG_MACH_LONGCHEER
 	if (!spidev->tx_buffer) {
 		spidev->tx_buffer = kmalloc(count, GFP_KERNEL);
 		if (!spidev->tx_buffer) {
@@ -223,18 +230,17 @@ spidev_write(struct file *filp, const char __user *buf,
 			goto write_unlock;
 		}
 	}
-
+#endif
 	missing = copy_from_user(spidev->tx_buffer, buf, count);
 	if (missing == 0)
 		status = spidev_sync_write(spidev, count);
 	else
 		status = -EFAULT;
-
+#ifdef CONFIG_MACH_LONGCHEER
 	kfree(spidev->tx_buffer);
 	spidev->tx_buffer = NULL;
-
 write_unlock:
-
+#endif
 	mutex_unlock(&spidev->buf_lock);
 
 	return status;
@@ -260,7 +266,7 @@ static int spidev_message(struct spidev_data *spidev,
 	 * We walk the array of user-provided transfers, using each one
 	 * to initialize a kernel version of the same transfer.
 	 */
-
+#ifdef CONFIG_MACH_LONGCHEER
 	if (!spidev->rx_buffer) {
 		spidev->rx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->rx_buffer) {
@@ -269,7 +275,6 @@ static int spidev_message(struct spidev_data *spidev,
 			goto rxbuffer_err;
 		}
 	}
-
 	if (!spidev->tx_buffer) {
 		spidev->tx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->tx_buffer) {
@@ -278,7 +283,7 @@ static int spidev_message(struct spidev_data *spidev,
 			goto txbuffer_err;
 		}
 	}
-
+#endif
 	tx_buf = spidev->tx_buffer;
 	rx_buf = spidev->rx_buffer;
 	total = 0;
@@ -287,6 +292,11 @@ static int spidev_message(struct spidev_data *spidev,
 	for (n = n_xfers, k_tmp = k_xfers, u_tmp = u_xfers;
 			n;
 			n--, k_tmp++, u_tmp++) {
+		/* Ensure that also following allocations from rx_buf/tx_buf will meet
+		 * DMA alignment requirements.
+		 */
+		unsigned int len_aligned = ALIGN(u_tmp->len, ARCH_KMALLOC_MINALIGN);
+
 		k_tmp->len = u_tmp->len;
 
 		total += k_tmp->len;
@@ -302,21 +312,17 @@ static int spidev_message(struct spidev_data *spidev,
 
 		if (u_tmp->rx_buf) {
 			/* this transfer needs space in RX bounce buffer */
-			rx_total += k_tmp->len;
+			rx_total += len_aligned;
 			if (rx_total > bufsiz) {
 				status = -EMSGSIZE;
 				goto done;
 			}
 			k_tmp->rx_buf = rx_buf;
-			if (!access_ok(VERIFY_WRITE, (u8 __user *)
-						(uintptr_t) u_tmp->rx_buf,
-						u_tmp->len))
-				goto done;
-			rx_buf += k_tmp->len;
+			rx_buf += len_aligned;
 		}
 		if (u_tmp->tx_buf) {
 			/* this transfer needs space in TX bounce buffer */
-			tx_total += k_tmp->len;
+			tx_total += len_aligned;
 			if (tx_total > bufsiz) {
 				status = -EMSGSIZE;
 				goto done;
@@ -326,7 +332,7 @@ static int spidev_message(struct spidev_data *spidev,
 						(uintptr_t) u_tmp->tx_buf,
 					u_tmp->len))
 				goto done;
-			tx_buf += k_tmp->len;
+			tx_buf += len_aligned;
 		}
 
 		k_tmp->cs_change = !!u_tmp->cs_change;
@@ -339,7 +345,7 @@ static int spidev_message(struct spidev_data *spidev,
 			k_tmp->speed_hz = spidev->speed_hz;
 #ifdef VERBOSE
 		dev_dbg(&spidev->spi->dev,
-			"  xfer len %zd %s%s%s%dbits %u usec %uHz\n",
+			"  xfer len %u %s%s%s%dbits %u usec %uHz\n",
 			u_tmp->len,
 			u_tmp->rx_buf ? "rx " : "",
 			u_tmp->tx_buf ? "tx " : "",
@@ -356,29 +362,29 @@ static int spidev_message(struct spidev_data *spidev,
 		goto done;
 
 	/* copy any rx data out of bounce buffer */
-	rx_buf = spidev->rx_buffer;
-	for (n = n_xfers, u_tmp = u_xfers; n; n--, u_tmp++) {
+	for (n = n_xfers, k_tmp = k_xfers, u_tmp = u_xfers;
+			n;
+			n--, k_tmp++, u_tmp++) {
 		if (u_tmp->rx_buf) {
-			if (__copy_to_user((u8 __user *)
-					(uintptr_t) u_tmp->rx_buf, rx_buf,
+			if (copy_to_user((u8 __user *)
+					(uintptr_t) u_tmp->rx_buf, k_tmp->rx_buf,
 					u_tmp->len)) {
 				status = -EFAULT;
 				goto done;
 			}
-			rx_buf += u_tmp->len;
 		}
 	}
 	status = total;
 
 done:
-
+#ifdef CONFIG_MACH_LONGCHEER
 	kfree(spidev->tx_buffer);
 	spidev->tx_buffer = NULL;
 txbuffer_err:
 	kfree(spidev->rx_buffer);
 	spidev->rx_buffer = NULL;
 rxbuffer_err:
-
+#endif
 	kfree(k_xfers);
 	return status;
 }
@@ -387,7 +393,6 @@ static struct spi_ioc_transfer *
 spidev_get_ioc_message(unsigned int cmd, struct spi_ioc_transfer __user *u_ioc,
 		unsigned *n_ioc)
 {
-	struct spi_ioc_transfer	*ioc;
 	u32	tmp;
 
 	/* Check type, command number and direction */
@@ -404,20 +409,12 @@ spidev_get_ioc_message(unsigned int cmd, struct spi_ioc_transfer __user *u_ioc,
 		return NULL;
 
 	/* copy into scratch area */
-	ioc = kmalloc(tmp, GFP_KERNEL);
-	if (!ioc)
-		return ERR_PTR(-ENOMEM);
-	if (__copy_from_user(ioc, u_ioc, tmp)) {
-		kfree(ioc);
-		return ERR_PTR(-EFAULT);
-	}
-	return ioc;
+	return memdup_user(u_ioc, tmp);
 }
 
 static long
 spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int			err = 0;
 	int			retval = 0;
 	struct spidev_data	*spidev;
 	struct spi_device	*spi;
@@ -428,19 +425,6 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	/* Check type and command number */
 	if (_IOC_TYPE(cmd) != SPI_IOC_MAGIC)
 		return -ENOTTY;
-
-	/* Check access direction once here; don't repeat below.
-	 * IOC_DIR is from the user perspective, while access_ok is
-	 * from the kernel perspective; so they look reversed.
-	 */
-	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE,
-				(void __user *)arg, _IOC_SIZE(cmd));
-	if (err == 0 && _IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ,
-				(void __user *)arg, _IOC_SIZE(cmd));
-	if (err)
-		return -EFAULT;
 
 	/* guard against device removal before, or while,
 	 * we issue this ioctl.
@@ -464,31 +448,31 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	/* read requests */
 	case SPI_IOC_RD_MODE:
-		retval = __put_user(spi->mode & SPI_MODE_MASK,
+		retval = put_user(spi->mode & SPI_MODE_MASK,
 					(__u8 __user *)arg);
 		break;
 	case SPI_IOC_RD_MODE32:
-		retval = __put_user(spi->mode & SPI_MODE_MASK,
+		retval = put_user(spi->mode & SPI_MODE_MASK,
 					(__u32 __user *)arg);
 		break;
 	case SPI_IOC_RD_LSB_FIRST:
-		retval = __put_user((spi->mode & SPI_LSB_FIRST) ?  1 : 0,
+		retval = put_user((spi->mode & SPI_LSB_FIRST) ?  1 : 0,
 					(__u8 __user *)arg);
 		break;
 	case SPI_IOC_RD_BITS_PER_WORD:
-		retval = __put_user(spi->bits_per_word, (__u8 __user *)arg);
+		retval = put_user(spi->bits_per_word, (__u8 __user *)arg);
 		break;
 	case SPI_IOC_RD_MAX_SPEED_HZ:
-		retval = __put_user(spidev->speed_hz, (__u32 __user *)arg);
+		retval = put_user(spidev->speed_hz, (__u32 __user *)arg);
 		break;
 
 	/* write requests */
 	case SPI_IOC_WR_MODE:
 	case SPI_IOC_WR_MODE32:
 		if (cmd == SPI_IOC_WR_MODE)
-			retval = __get_user(tmp, (u8 __user *)arg);
+			retval = get_user(tmp, (u8 __user *)arg);
 		else
-			retval = __get_user(tmp, (u32 __user *)arg);
+			retval = get_user(tmp, (u32 __user *)arg);
 		if (retval == 0) {
 			u32	save = spi->mode;
 
@@ -507,7 +491,7 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case SPI_IOC_WR_LSB_FIRST:
-		retval = __get_user(tmp, (__u8 __user *)arg);
+		retval = get_user(tmp, (__u8 __user *)arg);
 		if (retval == 0) {
 			u32	save = spi->mode;
 
@@ -524,7 +508,7 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case SPI_IOC_WR_BITS_PER_WORD:
-		retval = __get_user(tmp, (__u8 __user *)arg);
+		retval = get_user(tmp, (__u8 __user *)arg);
 		if (retval == 0) {
 			u8	save = spi->bits_per_word;
 
@@ -537,7 +521,7 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case SPI_IOC_WR_MAX_SPEED_HZ:
-		retval = __get_user(tmp, (__u32 __user *)arg);
+		retval = get_user(tmp, (__u32 __user *)arg);
 		if (retval == 0) {
 			u32	save = spi->max_speed_hz;
 
@@ -587,8 +571,6 @@ spidev_compat_ioc_message(struct file *filp, unsigned int cmd,
 	struct spi_ioc_transfer		*ioc;
 
 	u_ioc = (struct spi_ioc_transfer __user *) compat_ptr(arg);
-	if (!access_ok(VERIFY_READ, u_ioc, _IOC_SIZE(cmd)))
-		return -EFAULT;
 
 	/* guard against device removal before, or while,
 	 * we issue this ioctl.
@@ -662,7 +644,7 @@ static int spidev_open(struct inode *inode, struct file *filp)
 		goto err_find_dev;
 	}
 
-/*
+#ifndef CONFIG_MACH_LONGCHEER
 	if (!spidev->tx_buffer) {
 		spidev->tx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->tx_buffer) {
@@ -680,7 +662,7 @@ static int spidev_open(struct inode *inode, struct file *filp)
 			goto err_alloc_rx_buf;
 		}
 	}
-*/
+#endif
 
 	spidev->users++;
 	filp->private_data = spidev;
@@ -689,12 +671,11 @@ static int spidev_open(struct inode *inode, struct file *filp)
 	mutex_unlock(&device_list_lock);
 	return 0;
 
-/*
+#ifndef CONFIG_MACH_LONGCHEER
 err_alloc_rx_buf:
 	kfree(spidev->tx_buffer);
 	spidev->tx_buffer = NULL;
-*/
-
+#endif
 err_find_dev:
 	mutex_unlock(&device_list_lock);
 	return status;
@@ -718,13 +699,13 @@ static int spidev_release(struct inode *inode, struct file *filp)
 	spidev->users--;
 	if (!spidev->users) {
 
-/*
+#ifndef CONFIG_MACH_LONGCHEER
 		kfree(spidev->tx_buffer);
 		spidev->tx_buffer = NULL;
 
 		kfree(spidev->rx_buffer);
 		spidev->rx_buffer = NULL;
-*/
+#endif
 
 		if (dofree)
 			kfree(spidev);
@@ -768,12 +749,49 @@ static struct class *spidev_class;
 static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "rohm,dh2228fv" },
 	{ .compatible = "lineartechnology,ltc2488" },
-	{ .compatible = "qcom,spi-msm-codec-slave", },
-	{ .compatible = "nxp,mpc57xx", },
-	{ .compatible = "infineon,sli97", },
+	{ .compatible = "ge,achc" },
+	{ .compatible = "semtech,sx1301" },
+	{ .compatible = "qcom,spi-msm-codec-slave" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
+#endif
+
+#ifdef CONFIG_ACPI
+
+/* Dummy SPI devices not to be used in production systems */
+#define SPIDEV_ACPI_DUMMY	1
+
+static const struct acpi_device_id spidev_acpi_ids[] = {
+	/*
+	 * The ACPI SPT000* devices are only meant for development and
+	 * testing. Systems used in production should have a proper ACPI
+	 * description of the connected peripheral and they should also use
+	 * a proper driver instead of poking directly to the SPI bus.
+	 */
+	{ "SPT0001", SPIDEV_ACPI_DUMMY },
+	{ "SPT0002", SPIDEV_ACPI_DUMMY },
+	{ "SPT0003", SPIDEV_ACPI_DUMMY },
+	{},
+};
+MODULE_DEVICE_TABLE(acpi, spidev_acpi_ids);
+
+static void spidev_probe_acpi(struct spi_device *spi)
+{
+	const struct acpi_device_id *id;
+
+	if (!has_acpi_companion(&spi->dev))
+		return;
+
+	id = acpi_match_device(spidev_acpi_ids, &spi->dev);
+	if (WARN_ON(!id))
+		return;
+
+	if (id->driver_data == SPIDEV_ACPI_DUMMY)
+		dev_warn(&spi->dev, "do not use this driver in production systems!\n");
+}
+#else
+static inline void spidev_probe_acpi(struct spi_device *spi) {}
 #endif
 
 /*-------------------------------------------------------------------------*/
@@ -792,6 +810,8 @@ static int spidev_probe(struct spi_device *spi)
 	WARN(spi->dev.of_node &&
 	     of_device_is_compatible(spi->dev.of_node, "spidev"),
 	     "%pOF: buggy DT: spidev listed directly in DT\n", spi->dev.of_node);
+
+	spidev_probe_acpi(spi);
 
 	/* Allocate driver data */
 	spidev = kzalloc(sizeof(*spidev), GFP_KERNEL);
@@ -863,6 +883,7 @@ static struct spi_driver spidev_spi_driver = {
 	.driver = {
 		.name =		"spidev",
 		.of_match_table = of_match_ptr(spidev_dt_ids),
+		.acpi_match_table = ACPI_PTR(spidev_acpi_ids),
 	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,

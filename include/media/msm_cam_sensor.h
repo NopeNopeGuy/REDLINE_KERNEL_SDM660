@@ -1,3 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __LINUX_MSM_CAM_SENSOR_H
 #define __LINUX_MSM_CAM_SENSOR_H
 
@@ -37,19 +50,19 @@ struct msm_camera_sensor_slave_info32 {
 	enum i2c_freq_mode_t i2c_freq_mode;
 	enum msm_camera_i2c_reg_addr_type addr_type;
 	struct msm_sensor_id_info_t sensor_id_info;
-#ifndef CONFIG_XIAOMI_MIUI_Q_CAMERA_BLOBS
+#if defined(CONFIG_MACH_LONGCHEER) && !defined(CONFIG_XIAOMI_OLD_CAMERA_BLOBS)
 	struct msm_vendor_id_info_t vendor_id_info;
 	struct msm_vcm_id_info_t vcm_id_info;
+#endif
 #ifdef CONFIG_XIAOMI_NEW_CAMERA_BLOBS
 	struct msm_lens_id_info_t lens_id_info;
-#endif
 #endif
 	struct msm_sensor_power_setting_array32 power_setting_array;
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
 	uint8_t bypass_video_node_creation;
-#ifdef CONFIG_XIAOMI_MIUI_Q_CAMERA_BLOBS
+#ifdef CONFIG_XIAOMI_OLD_CAMERA_BLOBS
 	struct msm_vendor_id_info_t vendor_id_info;
 	struct msm_vcm_id_info_t vcm_id_info;
 #endif

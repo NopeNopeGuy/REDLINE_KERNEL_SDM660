@@ -1,15 +1,5 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- */
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2012-2018, 2020, The Linux Foundation. All rights reserved. */
 
 #ifndef MDSS_DEBUG_H
 #define MDSS_DEBUG_H
@@ -139,7 +129,7 @@ static const struct file_operations __prefix ## _fops = {		\
 	.release = single_release,					\
 	.read = seq_read,						\
 	.llseek = seq_lseek,						\
-};
+}
 
 int mdss_debugfs_init(struct mdss_data_type *mdata);
 int mdss_debugfs_remove(struct mdss_data_type *mdata);
@@ -171,7 +161,6 @@ void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag, char *addr,
 	int len, u32 **dump_mem, bool from_isr);
 void mdss_mdp_debug_mid(u32 mid);
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag, u32 **dump_mem);
-int mdss_dump_misr_data(char **buf, u32 size);
 #else
 struct mdss_debug_base;
 struct dump_offset;
@@ -214,13 +203,18 @@ static inline void mdss_xlog(const char *name, int line, int flag, ...) { }
 static inline void mdss_dsi_debug_check_te(struct mdss_panel_data *pdata) { }
 static inline void mdss_xlog_tout_handler_default(bool queue,
 	const char *name, ...) { }
-static inline u32 get_dump_range(struct dump_offset *range_node, size_t max_offset)
-	{ return 0; }
-static inline void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag, char *addr,
-	int len, u32 **dump_mem, bool from_isr) { }
+static inline u32 get_dump_range(struct dump_offset *range_node,
+						size_t max_offset)
+{
+return 0;
+}
+static inline void mdss_dump_reg(const char *dump_name, u32 reg_dump_flag,
+			char *addr, int len, u32 **dump_mem, bool from_isr)
+{ }
 static inline void mdss_mdp_debug_mid(u32 mid) { }
-static inline int mdss_dump_misr_data(char **buf, u32 size) { return 0; }
 #endif
+
+int mdss_dump_misr_data(char **buf, u32 size);
 
 static inline int mdss_debug_register_io(const char *name,
 		struct dss_io_data *io_data, struct mdss_debug_base **dbg_blk)

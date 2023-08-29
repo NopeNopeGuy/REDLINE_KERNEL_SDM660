@@ -22,10 +22,6 @@
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
  ****************************************************************************/
 
 #ifndef __CPIA2_H__
@@ -449,7 +445,7 @@ int cpia2_allocate_buffers(struct camera_data *cam);
 void cpia2_free_buffers(struct camera_data *cam);
 long cpia2_read(struct camera_data *cam,
 		char __user *buf, unsigned long count, int noblock);
-unsigned int cpia2_poll(struct camera_data *cam,
+__poll_t cpia2_poll(struct camera_data *cam,
 			struct file *filp, poll_table *wait);
 int cpia2_remap_buffer(struct camera_data *cam, struct vm_area_struct *vma);
 void cpia2_set_property_flip(struct camera_data *cam, int prop_val);
@@ -480,7 +476,7 @@ int cpia2_usb_change_streaming_alternate(struct camera_data *cam,
 #define ALOG(fmt,args...) printk(fmt,##args)
 #define LOG(fmt,args...) ALOG(KERN_INFO "cpia2: "fmt,##args)
 #define ERR(fmt,args...) ALOG(KERN_ERR "cpia2: "fmt,##args)
-#define DBG(fmn,args...) do {} while(0)
+#define DBG(fmn,args...) ((void)0)
 #endif
 /* No function or lineno, for shorter lines */
 #define KINFO(fmt, args...) printk(KERN_INFO fmt,##args)

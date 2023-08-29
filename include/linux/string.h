@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_STRING_H_
 #define _LINUX_STRING_H_
 
@@ -5,11 +6,14 @@
 #include <linux/compiler.h>	/* for inline */
 #include <linux/types.h>	/* for size_t */
 #include <linux/stddef.h>	/* for NULL */
+#include <linux/errno.h>	/* for E2BIG */
 #include <stdarg.h>
 #include <uapi/linux/string.h>
 
 extern char *strndup_user(const char __user *, long);
 extern void *memdup_user(const void __user *, size_t);
+extern void *vmemdup_user(const void __user *, size_t);
+extern void *memdup_user_nul(const void __user *, size_t);
 
 /*
  * Include machine specific inline routines
@@ -150,12 +154,26 @@ extern int bcmp(const void *,const void *,__kernel_size_t);
 #ifndef __HAVE_ARCH_MEMCHR
 extern void * memchr(const void *,int,__kernel_size_t);
 #endif
+#ifndef __HAVE_ARCH_MEMCPY_MCSAFE
+static inline __must_check unsigned long memcpy_mcsafe(void *dst,
+		const void *src, size_t cnt)
+{
+	memcpy(dst, src, cnt);
+	return 0;
+}
+#endif
+#ifndef __HAVE_ARCH_MEMCPY_FLUSHCACHE
+static inline void memcpy_flushcache(void *dst, const void *src, size_t cnt)
+{
+	memcpy(dst, src, cnt);
+}
+#endif
 void *memchr_inv(const void *s, int c, size_t n);
 char *strreplace(char *s, char old, char new);
 
 extern void kfree_const(const void *x);
 
-extern char *kstrdup(const char *s, gfp_t gfp);
+extern char *kstrdup(const char *s, gfp_t gfp) __malloc;
 extern const char *kstrdup_const(const char *s, gfp_t gfp);
 extern char *kstrndup(const char *s, size_t len, gfp_t gfp);
 extern void *kmemdup(const void *src, size_t len, gfp_t gfp);
@@ -171,6 +189,18 @@ static inline int strtobool(const char *s, bool *res)
 	return kstrtobool(s, res);
 }
 
+int match_string(const char * const *array, size_t n, const char *string);
+int __sysfs_match_string(const char * const *array, size_t n, const char *s);
+
+/**
+ * sysfs_match_string - matches given string in an array
+ * @_a: array of strings
+ * @_s: string to match with
+ *
+ * Helper for __sysfs_match_string(). Calculates the size of @a automatically.
+ */
+#define sysfs_match_string(_a, _s) __sysfs_match_string(_a, ARRAY_SIZE(_a), _s)
+
 #ifdef CONFIG_BINARY_PRINTF
 int vbin_printf(u32 *bin_buf, size_t size, const char *fmt, va_list args);
 int bstr_printf(char *buf, size_t size, const char *fmt, const u32 *bin_buf);
@@ -179,6 +209,8 @@ int bprintf(u32 *bin_buf, size_t size, const char *fmt, ...) __printf(3, 4);
 
 extern ssize_t memory_read_from_buffer(void *to, size_t count, loff_t *ppos,
 				       const void *from, size_t available);
+
+int ptr_to_hashval(const void *ptr, unsigned long *hashval_out);
 
 /**
  * strstarts - does @str start with @prefix?
@@ -191,7 +223,26 @@ static inline bool strstarts(const char *str, const char *prefix)
 }
 
 size_t memweight(const void *ptr, size_t bytes);
-void memzero_explicit(void *s, size_t count);
+
+/**
+ * memzero_explicit - Fill a region of memory (e.g. sensitive
+ *		      keying data) with 0s.
+ * @s: Pointer to the start of the area.
+ * @count: The size of the area.
+ *
+ * Note: usually using memset() is just fine (!), but in cases
+ * where clearing out _local_ data at the end of a scope is
+ * necessary, memzero_explicit() should be used instead in
+ * order to prevent the compiler from optimising away zeroing.
+ *
+ * memzero_explicit() doesn't need an arch-specific version as
+ * it just invokes the one of memset() implicitly.
+ */
+static inline void memzero_explicit(void *s, size_t count)
+{
+	memset(s, 0, count);
+	barrier_data(s);
+}
 
 /**
  * kbasename - return the last part of a pathname.
@@ -204,34 +255,55 @@ static inline const char *kbasename(const char *path)
 	return tail ? tail + 1 : path;
 }
 
-/*
- * Replace some common string helpers with faster alternatives when one of the
- * arguments is a constant (i.e., literal string). This uses strlen instead of
- * sizeof for calculating the string length in order to silence compiler
- * warnings that may arise due to what the compiler thinks is incorrect sizeof
- * usage. The strlen calls on constants are folded into scalar values at compile
- * time, so performance is not reduced by using strlen.
+#define __FORTIFY_INLINE extern __always_inline __attribute__((gnu_inline))
+#define __RENAME(x) __asm__(#x)
+
+void fortify_panic(const char *name) __noreturn __cold;
+void __read_overflow(void) __compiletime_error("detected read beyond size of object passed as 1st parameter");
+void __read_overflow2(void) __compiletime_error("detected read beyond size of object passed as 2nd parameter");
+void __read_overflow3(void) __compiletime_error("detected read beyond size of object passed as 3rd parameter");
+void __write_overflow(void) __compiletime_error("detected write beyond size of object passed as 1st parameter");
+
+#if !defined(__NO_FORTIFY) && defined(__OPTIMIZE__) && defined(CONFIG_FORTIFY_SOURCE)
+#include <linux/fortify-string.h>
+#endif
+
+/**
+ * memcpy_and_pad - Copy one buffer to another with padding
+ * @dest: Where to copy to
+ * @dest_len: The destination buffer size
+ * @src: Where to copy from
+ * @count: The number of bytes to copy
+ * @pad: Character to use for padding if space is left in destination.
  */
-#define strcpy(dest, src)							\
-	__builtin_choose_expr(__builtin_constant_p(src),			\
-		memcpy((dest), (src), strlen(src) + 1),				\
-		(strcpy)((dest), (src)))
+static inline void memcpy_and_pad(void *dest, size_t dest_len,
+				  const void *src, size_t count, int pad)
+{
+	if (dest_len > count) {
+		memcpy(dest, src, count);
+		memset(dest + count, pad,  dest_len - count);
+	} else
+		memcpy(dest, src, dest_len);
+}
 
-#define strcat(dest, src)							\
-	__builtin_choose_expr(__builtin_constant_p(src),			\
-		({								\
-			memcpy((dest) + strlen(dest), (src), strlen(src) + 1);	\
-			(dest);							\
-		}),								\
-		(strcat)((dest), (src)))
-
-#define strcmp(left, right)							\
-	__builtin_choose_expr(__builtin_constant_p(left),			\
-		__builtin_choose_expr(__builtin_constant_p(right),		\
-			(strcmp)((left), (right)),				\
-			memcmp((left), (right), strlen(left) + 1)),		\
-		__builtin_choose_expr(__builtin_constant_p(right),		\
-			memcmp((left), (right), strlen(right) + 1),		\
-			(strcmp)((left), (right))))
+/**
+ * str_has_prefix - Test if a string has a given prefix
+ * @str: The string to test
+ * @prefix: The string to see if @str starts with
+ *
+ * A common way to test a prefix of a string is to do:
+ *  strncmp(str, prefix, sizeof(prefix) - 1)
+ *
+ * But this can lead to bugs due to typos, or if prefix is a pointer
+ * and not a constant. Instead use str_has_prefix().
+ *
+ * Returns: 0 if @str does not start with @prefix
+         strlen(@prefix) if @str does start with @prefix
+ */
+static __always_inline size_t str_has_prefix(const char *str, const char *prefix)
+{
+	size_t len = strlen(prefix);
+	return strncmp(str, prefix, len) == 0 ? len : 0;
+}
 
 #endif /* _LINUX_STRING_H_ */

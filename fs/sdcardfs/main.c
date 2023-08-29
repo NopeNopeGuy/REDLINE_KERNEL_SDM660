@@ -19,6 +19,7 @@
  */
 
 #include "sdcardfs.h"
+#include <linux/fscrypt.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/parser.h>
@@ -92,7 +93,7 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 
 		switch (token) {
 		case Opt_debug:
-			*debug = 1;
+			*debug = 0;
 			break;
 		case Opt_fsuid:
 			if (match_int(&args[0], &option))
@@ -179,7 +180,7 @@ int parse_options_remount(struct super_block *sb, char *options, int silent,
 
 		switch (token) {
 		case Opt_debug:
-			debug = 1;
+			debug = 0;
 			break;
 		case Opt_gid:
 			if (match_int(&args[0], &option))
@@ -199,6 +200,7 @@ int parse_options_remount(struct super_block *sb, char *options, int silent,
 		case Opt_fsuid:
 		case Opt_fsgid:
 		case Opt_reserved_mb:
+			pr_warn("Option \"%s\" can't be changed during remount\n", p);
 		case Opt_gid_derivation:
 			if (!silent)
 				pr_warn("Option \"%s\" can't be changed during remount\n", p);
@@ -278,7 +280,7 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 
 	pr_info("sdcardfs: dev_name -> %s\n", dev_name);
 	pr_info("sdcardfs: options -> %s\n", (char *)raw_data);
-	pr_info("sdcardfs: mnt -> %pK\n", mnt);
+	pr_info("sdcardfs: mnt -> %p\n", mnt);
 
 	/* parse lower path */
 	err = kern_path(dev_name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
@@ -374,6 +376,9 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 	list_add(&sb_info->list, &sdcardfs_super_list);
 	mutex_unlock(&sdcardfs_super_list_lock);
 
+	sb_info->fscrypt_nb.notifier_call = sdcardfs_on_fscrypt_key_removed;
+	fscrypt_register_key_removal_notifier(&sb_info->fscrypt_nb);
+
 	if (!silent)
 		pr_info("sdcardfs: mounted on top of %s type %s\n",
 				dev_name, lower_sb->s_type->name);
@@ -444,6 +449,9 @@ void sdcardfs_kill_sb(struct super_block *sb)
 
 	if (sb->s_magic == SDCARDFS_SUPER_MAGIC && sb->s_fs_info) {
 		sbi = SDCARDFS_SB(sb);
+
+		fscrypt_unregister_key_removal_notifier(&sbi->fscrypt_nb);
+
 		mutex_lock(&sdcardfs_super_list_lock);
 		list_del(&sbi->list);
 		mutex_unlock(&sdcardfs_super_list_lock);
@@ -462,9 +470,15 @@ static struct file_system_type sdcardfs_fs_type = {
 };
 MODULE_ALIAS_FS(SDCARDFS_NAME);
 
+extern bool is_inline;
 static int __init init_sdcardfs_fs(void)
 {
 	int err;
+
+	if (is_inline) {
+		pr_info("Scarlet-X: Inline ROM detected! Killing SDCARDFS...\n");
+		return -ENODEV;
+	}
 
 	pr_info("Registering sdcardfs " SDCARDFS_VERSION "\n");
 

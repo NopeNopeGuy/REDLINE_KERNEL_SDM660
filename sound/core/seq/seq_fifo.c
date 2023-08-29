@@ -21,6 +21,8 @@
 
 #include <sound/core.h>
 #include <linux/slab.h>
+#include <linux/sched/signal.h>
+
 #include "seq_fifo.h"
 #include "seq_lock.h"
 
@@ -177,7 +179,7 @@ int snd_seq_fifo_cell_out(struct snd_seq_fifo *f,
 {
 	struct snd_seq_event_cell *cell;
 	unsigned long flags;
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 
 	if (snd_BUG_ON(!f))
 		return -EINVAL;
@@ -193,9 +195,9 @@ int snd_seq_fifo_cell_out(struct snd_seq_fifo *f,
 		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		add_wait_queue(&f->input_sleep, &wait);
-		spin_unlock_irqrestore(&f->lock, flags);
+		spin_unlock_irq(&f->lock);
 		schedule();
-		spin_lock_irqsave(&f->lock, flags);
+		spin_lock_irq(&f->lock);
 		remove_wait_queue(&f->input_sleep, &wait);
 		if (signal_pending(current)) {
 			spin_unlock_irqrestore(&f->lock, flags);

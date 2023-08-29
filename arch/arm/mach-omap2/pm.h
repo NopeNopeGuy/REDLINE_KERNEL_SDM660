@@ -61,7 +61,7 @@ extern u32 enable_off_mode;
 #if defined(CONFIG_PM_DEBUG) && defined(CONFIG_DEBUG_FS)
 extern void pm_dbg_update_time(struct powerdomain *pwrdm, int prev);
 #else
-#define pm_dbg_update_time(pwrdm, prev) do {} while (0);
+#define pm_dbg_update_time(pwrdm, prev) ((void)0);
 #endif /* CONFIG_PM_DEBUG */
 
 /* 24xx */
@@ -80,6 +80,9 @@ extern void omap3_do_wfi(void);
 extern unsigned int omap3_do_wfi_sz;
 /* ... and its pointer from SRAM after copy */
 extern void (*omap3_do_wfi_sram)(void);
+
+extern struct am33xx_pm_sram_addr am33xx_pm_sram;
+extern struct am33xx_pm_sram_addr am43xx_pm_sram;
 
 extern void omap3_save_scratchpad_contents(void);
 

@@ -106,7 +106,7 @@ MODULE_PARM_DESC(lk201_compose_is_alt,
 #ifdef LKKBD_DEBUG
 #define DBG(x...) printk(x)
 #else
-#define DBG(x...) do {} while (0)
+#define DBG(x...) ((void)0)
 #endif
 
 /* LED control */
@@ -707,7 +707,7 @@ static void lkkbd_disconnect(struct serio *serio)
 	kfree(lk);
 }
 
-static struct serio_device_id lkkbd_serio_ids[] = {
+static const struct serio_device_id lkkbd_serio_ids[] = {
 	{
 		.type	= SERIO_RS232,
 		.proto	= SERIO_LKKBD,

@@ -16,14 +16,14 @@
 #include <soc/qcom/watchdog.h>
 
 void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
-			  struct lock_class_key *key)
+			  struct lock_class_key *key, short inner)
 {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	/*
 	 * Make sure we are not reinitializing a held lock:
 	 */
 	debug_check_no_locks_freed((void *)lock, sizeof(*lock));
-	lockdep_init_map(&lock->dep_map, name, key, 0);
+	lockdep_init_map_wait(&lock->dep_map, name, key, 0, inner);
 #endif
 	lock->raw_lock = (arch_spinlock_t)__ARCH_SPIN_LOCK_UNLOCKED;
 	lock->magic = SPINLOCK_MAGIC;
@@ -41,7 +41,7 @@ void __rwlock_init(rwlock_t *lock, const char *name,
 	 * Make sure we are not reinitializing a held lock:
 	 */
 	debug_check_no_locks_freed((void *)lock, sizeof(*lock));
-	lockdep_init_map(&lock->dep_map, name, key, 0);
+	lockdep_init_map_wait(&lock->dep_map, name, key, 0, LD_WAIT_CONFIG);
 #endif
 	lock->raw_lock = (arch_rwlock_t) __ARCH_RW_LOCK_UNLOCKED;
 	lock->magic = RWLOCK_MAGIC;
@@ -110,38 +110,14 @@ static inline void debug_spin_unlock(raw_spinlock_t *lock)
 	WRITE_ONCE(lock->owner_cpu, -1);
 }
 
-static void __spin_lock_debug(raw_spinlock_t *lock)
-{
-	u64 i;
-	u64 loops = loops_per_jiffy * HZ;
-
-	for (i = 0; i < loops; i++) {
-		if (arch_spin_trylock(&lock->raw_lock))
-			return;
-		__delay(1);
-	}
-	/* lockup suspected: */
-	spin_bug(lock, "lockup suspected");
-#ifdef CONFIG_SMP
-	trigger_all_cpu_backtrace();
-#endif
-
-	/*
-	 * The trylock above was causing a livelock.  Give the lower level arch
-	 * specific lock code a chance to acquire the lock. We have already
-	 * printed a warning/backtrace at this point. The non-debug arch
-	 * specific code might actually succeed in acquiring the lock.  If it is
-	 * not successful, the end-result is the same - there is no forward
-	 * progress.
-	 */
-	arch_spin_lock(&lock->raw_lock);
-}
-
+/*
+ * We are now relying on the NMI watchdog to detect lockup instead of doing
+ * the detection here with an unfair lock which can cause problem of its own.
+ */
 void do_raw_spin_lock(raw_spinlock_t *lock)
 {
 	debug_spin_lock_before(lock);
-	if (unlikely(!arch_spin_trylock(&lock->raw_lock)))
-		__spin_lock_debug(lock);
+	arch_spin_lock(&lock->raw_lock);
 	debug_spin_lock_after(lock);
 }
 
@@ -183,32 +159,6 @@ static void rwlock_bug(rwlock_t *lock, const char *msg)
 }
 
 #define RWLOCK_BUG_ON(cond, lock, msg) if (unlikely(cond)) rwlock_bug(lock, msg)
-
-#if 0		/* __write_lock_debug() can lock up - maybe this can too? */
-static void __read_lock_debug(rwlock_t *lock)
-{
-	u64 i;
-	u64 loops = loops_per_jiffy * HZ;
-	int print_once = 1;
-
-	for (;;) {
-		for (i = 0; i < loops; i++) {
-			if (arch_read_trylock(&lock->raw_lock))
-				return;
-			__delay(1);
-		}
-		/* lockup suspected: */
-		if (print_once) {
-			print_once = 0;
-			printk(KERN_EMERG "BUG: read-lock lockup on CPU#%d, "
-					"%s/%d, %p\n",
-				raw_smp_processor_id(), current->comm,
-				current->pid, lock);
-			dump_stack();
-		}
-	}
-}
-#endif
 
 void do_raw_read_lock(rwlock_t *lock)
 {
@@ -258,32 +208,6 @@ static inline void debug_write_unlock(rwlock_t *lock)
 	WRITE_ONCE(lock->owner, SPINLOCK_OWNER_INIT);
 	WRITE_ONCE(lock->owner_cpu, -1);
 }
-
-#if 0		/* This can cause lockups */
-static void __write_lock_debug(rwlock_t *lock)
-{
-	u64 i;
-	u64 loops = loops_per_jiffy * HZ;
-	int print_once = 1;
-
-	for (;;) {
-		for (i = 0; i < loops; i++) {
-			if (arch_write_trylock(&lock->raw_lock))
-				return;
-			__delay(1);
-		}
-		/* lockup suspected: */
-		if (print_once) {
-			print_once = 0;
-			printk(KERN_EMERG "BUG: write-lock lockup on CPU#%d, "
-					"%s/%d, %p\n",
-				raw_smp_processor_id(), current->comm,
-				current->pid, lock);
-			dump_stack();
-		}
-	}
-}
-#endif
 
 void do_raw_write_lock(rwlock_t *lock)
 {

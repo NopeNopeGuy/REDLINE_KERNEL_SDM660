@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/bitops.h>
@@ -17,22 +9,23 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/reset-controller.h>
+#include <linux/slab.h>
+
 #include <dt-bindings/clock/qcom,gpu-sdm660.h>
 
-#include "clk-alpha-pll.h"
 #include "common.h"
-#include "clk-regmap.h"
+#include "clk-alpha-pll.h"
+#include "clk-branch.h"
 #include "clk-pll.h"
 #include "clk-rcg.h"
-#include "clk-branch.h"
+#include "clk-regmap.h"
 #include "vdd-level-660.h"
 
-#define F(f, s, h, m, n) { (f), (s), (2 * (h) - 1), (m), (n) }
 #define F_GFX(f, s, h, m, n, sf) { (f), (s), (2 * (h) - 1), (m), (n), (sf) }
 
 static DEFINE_VDD_REGULATORS(vdd_dig, VDD_DIG_NUM, 1, vdd_corner);
@@ -40,12 +33,12 @@ static DEFINE_VDD_REGULATORS(vdd_mx, VDD_DIG_NUM, 1, vdd_corner);
 static DEFINE_VDD_REGS_INIT(vdd_gfx, 1);
 
 enum {
+	P_XO,
 	P_CORE_BI_PLL_TEST_SE,
 	P_GPLL0_OUT_MAIN,
 	P_GPLL0_OUT_MAIN_DIV,
 	P_GPU_PLL0_PLL_OUT_MAIN,
 	P_GPU_PLL1_PLL_OUT_MAIN,
-	P_XO,
 };
 
 static const struct parent_map gpucc_parent_map_0[] = {
@@ -85,11 +78,11 @@ static struct pll_vco gpu_vco[] = {
 };
 
 /* 800MHz configuration */
-static const struct pll_config gpu_pll0_config = {
+static const struct alpha_pll_config gpu_pll0_config = {
 	.l = 0x29,
 	.config_ctl_val = 0x4001055b,
 	.alpha = 0xaaaaab00,
-	.alpha_u = 0xaa,
+	.alpha_hi = 0xaa,
 	.alpha_en_mask = BIT(24),
 	.vco_val = 0x2 << 20,
 	.vco_mask = 0x3 << 20,
@@ -103,6 +96,7 @@ static struct pll_vco_data pll_data[] = {
 
 static struct clk_alpha_pll gpu_pll0_pll_out_main = {
 	.offset = 0x0,
+	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_DEFAULT],
 	.vco_table = gpu_vco,
 	.num_vco = ARRAY_SIZE(gpu_vco),
 	.vco_data = pll_data,
@@ -120,6 +114,7 @@ static struct clk_alpha_pll gpu_pll0_pll_out_main = {
 
 static struct clk_alpha_pll gpu_pll1_pll_out_main = {
 	.offset = 0x40,
+	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_DEFAULT],
 	.vco_table = gpu_vco,
 	.num_vco = ARRAY_SIZE(gpu_vco),
 	.vco_data = pll_data,
@@ -142,7 +137,7 @@ static struct clk_init_data gpu_clks_init[] = {
 		.parent_names = gpucc_parent_names_1,
 		.num_parents = 3,
 		.ops = &clk_gfx3d_src_ops,
-		.flags = CLK_SET_RATE_PARENT,
+		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
 	},
 	[1] = {
 		.name = "gpucc_gfx3d_clk",
@@ -172,7 +167,7 @@ static struct clk_init_data gpu_clks_init[] = {
  *  | 700000000 | 1400000000   |    1        |    2    |
  *  | 750000000 | 1500000000   |    1        |    2    |
  *  ====================================================
-*/
+ */
 
 static const struct freq_tbl ftbl_gfx3d_clk_src[] = {
 	F_GFX( 19200000, 0,  1, 0, 0,         0),
@@ -208,7 +203,7 @@ static struct clk_rcg2 gfx3d_clk_src = {
 	.hid_width = 5,
 	.freq_tbl = ftbl_gfx3d_clk_src,
 	.parent_map = gpucc_parent_map_1,
-	.flags = FORCE_ENABLE_RCGR,
+	.flags = FORCE_ENABLE_RCG,
 	.clkr.hw.init = &gpu_clks_init[0],
 };
 
@@ -382,7 +377,7 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev,
 	if (!gpu_clks_init[index].rate_max)
 		return -ENOMEM;
 
-	array = devm_kzalloc(&pdev->dev, prop_len * sizeof(u32) * num,
+	array = kzalloc(prop_len * sizeof(u32) * num,
 				GFP_KERNEL);
 	if (!array)
 		return -ENOMEM;
@@ -396,7 +391,7 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev,
 		}
 	}
 
-	devm_kfree(&pdev->dev, array);
+	kfree(array);
 	vdd->num_levels = prop_len;
 	vdd->cur_level = prop_len;
 	gpu_clks_init[index].num_rate_max = prop_len;
@@ -406,11 +401,11 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev,
 
 static int gpucc_660_probe(struct platform_device *pdev)
 {
-	int ret = 0;
 	struct regmap *regmap;
 	struct resource *res;
 	void __iomem *base;
-	bool is_630 = 0;
+	bool is_630 = false;
+	int ret;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
@@ -491,6 +486,7 @@ static struct platform_driver gpucc_660_driver = {
 	.driver		= {
 		.name	= "gpucc-sdm660",
 		.of_match_table = gpucc_660_match_table,
+		.probe_type = PROBE_FORCE_SYNCHRONOUS,
 	},
 };
 
@@ -526,9 +522,8 @@ MODULE_DEVICE_TABLE(of, gpucc_rbcpr_660_match_table);
 
 static int gpu_660_probe(struct platform_device *pdev)
 {
-	int ret = 0;
-
 	struct regmap *regmap;
+	int ret;
 
 	regmap = qcom_cc_map(pdev, &gpu_660_desc);
 	if (IS_ERR(regmap))
@@ -539,7 +534,6 @@ static int gpu_660_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to register GPU RBCPR clocks\n");
 		return ret;
 	}
-
 
 	dev_info(&pdev->dev, "Registered GPU RBCPR clocks\n");
 
@@ -566,3 +560,5 @@ static void __exit gpu_660_exit(void)
 }
 module_exit(gpu_660_exit);
 
+MODULE_DESCRIPTION("Qualcomm SDM630/SDM660 GPUCC Driver");
+MODULE_LICENSE("GPL v2");

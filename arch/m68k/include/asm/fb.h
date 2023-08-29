@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_FB_H_
 #define _ASM_FB_H_
 
@@ -27,7 +28,7 @@ static inline void fb_pgprotect(struct file *file, struct vm_area_struct *vma,
 }
 #endif /* CONFIG_SUN3 */
 #else
-#define fb_pgprotect(...) do {} while (0)
+#define fb_pgprotect(...) ((void)0)
 #endif /* CONFIG_MMU */
 
 static inline int fb_is_primary_device(struct fb_info *info)

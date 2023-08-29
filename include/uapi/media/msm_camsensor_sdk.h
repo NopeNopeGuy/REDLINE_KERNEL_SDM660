@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 #ifndef __UAPI_LINUX_MSM_CAMSENSOR_SDK_H
 #define __UAPI_LINUX_MSM_CAMSENSOR_SDK_H
 
@@ -57,6 +58,8 @@ enum msm_sensor_camera_id_t {
 	CAMERA_1,
 	CAMERA_2,
 	CAMERA_3,
+	CAMERA_4,
+	CAMERA_5,
 	MAX_CAMERAS,
 };
 
@@ -245,10 +248,10 @@ struct msm_sensor_power_setting {
 
 struct msm_sensor_power_setting_array {
 	struct msm_sensor_power_setting  power_setting_a[MAX_POWER_CONFIG];
-	struct msm_sensor_power_setting *power_setting;
+	struct msm_sensor_power_setting  *power_setting;
 	unsigned short size;
 	struct msm_sensor_power_setting  power_down_setting_a[MAX_POWER_CONFIG];
-	struct msm_sensor_power_setting *power_down_setting;
+	struct msm_sensor_power_setting  *power_down_setting;
 	unsigned short size_down;
 };
 
@@ -256,6 +259,9 @@ enum msm_camera_i2c_operation {
 	MSM_CAM_WRITE = 0,
 	MSM_CAM_POLL,
 	MSM_CAM_READ,
+	MSM_CAM_READ_PAGE,
+	MSM_CAM_WRITE_DELAYUSEC,
+	MSM_CAM_READ_CONTINUOUS,
 };
 
 struct msm_sensor_i2c_sync_params {
@@ -301,6 +307,7 @@ struct msm_sensor_id_info_t {
 	unsigned short sensor_id_mask;
 };
 
+#ifdef CONFIG_MACH_LONGCHEER
 enum msm_cci_i2c_master_t {
 	MSM_MASTER_0,
 	MSM_MASTER_1,
@@ -324,8 +331,9 @@ struct msm_vcm_id_info_t {
 	enum msm_camera_i2c_data_type data_type;
 	enum msm_cci_i2c_master_t cci_i2c_master;
 };
+#endif
 
-#if defined (CONFIG_XIAOMI_NEW_CAMERA_BLOBS) || defined(CONFIG_XIAOMI_MIUI_Q_CAMERA_BLOBS)
+#if defined(CONFIG_XIAOMI_NEW_CAMERA_BLOBS) || defined(CONFIG_XIAOMI_OLD_CAMERA_BLOBS)
 struct msm_lens_id_info_t {
 	unsigned short eeprom_slave_addr;
 	unsigned short lens_id_addr;
@@ -347,19 +355,19 @@ struct msm_camera_sensor_slave_info {
 	enum i2c_freq_mode_t i2c_freq_mode;
 	enum msm_camera_i2c_reg_addr_type addr_type;
 	struct msm_sensor_id_info_t sensor_id_info;
-#ifndef CONFIG_XIAOMI_MIUI_Q_CAMERA_BLOBS
+#if defined(CONFIG_MACH_LONGCHEER) && !defined(CONFIG_XIAOMI_OLD_CAMERA_BLOBS)
 	struct msm_vendor_id_info_t vendor_id_info;
 	struct msm_vcm_id_info_t vcm_id_info;
+#endif
 #ifdef CONFIG_XIAOMI_NEW_CAMERA_BLOBS
 	struct msm_lens_id_info_t lens_id_info;
-#endif
 #endif
 	struct msm_sensor_power_setting_array power_setting_array;
 	unsigned char  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
 	uint8_t bypass_video_node_creation;
-#ifdef CONFIG_XIAOMI_MIUI_Q_CAMERA_BLOBS
+#ifdef CONFIG_XIAOMI_OLD_CAMERA_BLOBS
 	struct msm_vendor_id_info_t vendor_id_info;
 	struct msm_vcm_id_info_t vcm_id_info;
 	struct msm_lens_id_info_t lens_id_info;
@@ -454,8 +462,8 @@ struct damping_params_t {
 
 struct region_params_t {
 	/* [0] = ForwardDirection Macro boundary
-	   [1] = ReverseDirection Inf boundary
-	*/
+	 *  [1] = ReverseDirection Inf boundary
+	 */
 	unsigned short step_bound[2];
 	unsigned short code_per_step;
 	/* qvalue for converting float type numbers to integer format */

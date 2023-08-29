@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * kernel/power/autosleep.c
  *
@@ -9,14 +10,6 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/pm_wakeup.h>
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
- 
-
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
 
 #include "power.h"
 
@@ -113,14 +106,8 @@ int pm_autosleep_set_state(suspend_state_t state)
 	if (state > PM_SUSPEND_ON) {
 		pm_wakep_autosleep_enabled(true);
 		queue_up_suspend_work();
-#ifdef CONFIG_POWERSUSPEND
-		set_power_suspend_state_autosleep_hook(POWER_SUSPEND_ACTIVE); // Yank555.lu : add hook to handle powersuspend tasks
-#endif
 	} else {
 		pm_wakep_autosleep_enabled(false);
-#ifdef CONFIG_POWERSUSPEND
-		set_power_suspend_state_autosleep_hook(POWER_SUSPEND_INACTIVE); // Yank555.lu : add hook to handle powersuspend tasks
-#endif		
 	}
 
 	mutex_unlock(&autosleep_lock);
@@ -129,7 +116,7 @@ int pm_autosleep_set_state(suspend_state_t state)
 
 int __init pm_autosleep_init(void)
 {
-	autosleep_ws = wakeup_source_register("autosleep");
+	autosleep_ws = wakeup_source_register(NULL, "autosleep");
 	if (!autosleep_ws)
 		return -ENOMEM;
 

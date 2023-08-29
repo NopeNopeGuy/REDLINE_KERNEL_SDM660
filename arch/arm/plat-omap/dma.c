@@ -167,9 +167,9 @@ static inline void set_gdma_dev(int req, int dev)
 	omap_writel(l, reg);
 }
 #else
-#define set_gdma_dev(req, dev)	do {} while (0)
+#define set_gdma_dev(req, dev)	((void)0)
 #define omap_readl(reg)		0
-#define omap_writel(val, reg)	do {} while (0)
+#define omap_writel(val, reg)	((void)0)
 #endif
 
 #ifdef CONFIG_ARCH_OMAP1
@@ -1316,16 +1316,14 @@ static int omap_system_dma_probe(struct platform_device *pdev)
 	enable_1510_mode	= d->dev_caps & ENABLE_1510_MODE;
 
 	dma_chan = devm_kcalloc(&pdev->dev, dma_lch_count,
-				sizeof(struct omap_dma_lch), GFP_KERNEL);
-	if (!dma_chan) {
-		dev_err(&pdev->dev, "%s: kzalloc fail\n", __func__);
+				sizeof(*dma_chan), GFP_KERNEL);
+	if (!dma_chan)
 		return -ENOMEM;
-	}
-
 
 	if (dma_omap2plus()) {
-		dma_linked_lch = kzalloc(sizeof(struct dma_link_info) *
-						dma_lch_count, GFP_KERNEL);
+		dma_linked_lch = kcalloc(dma_lch_count,
+					 sizeof(*dma_linked_lch),
+					 GFP_KERNEL);
 		if (!dma_linked_lch) {
 			ret = -ENOMEM;
 			goto exit_dma_lch_fail;

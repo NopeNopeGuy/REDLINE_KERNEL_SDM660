@@ -27,57 +27,34 @@
  *
  * x0 - pointer to struct fpsimd_state
  */
-ENTRY(fpsimd_save_state)
+SYM_FUNC_START(fpsimd_save_state)
 	fpsimd_save x0, 8
 	ret
-ENDPROC(fpsimd_save_state)
+SYM_FUNC_END(fpsimd_save_state)
 
 /*
  * Load the FP registers.
  *
  * x0 - pointer to struct fpsimd_state
  */
-ENTRY(fpsimd_load_state)
+SYM_FUNC_START(fpsimd_load_state)
 	fpsimd_restore x0, 8
 	ret
-ENDPROC(fpsimd_load_state)
+SYM_FUNC_END(fpsimd_load_state)
 
-#ifdef CONFIG_KERNEL_MODE_NEON
-
-/*
- * Save the bottom n FP registers.
- *
- * x0 - pointer to struct fpsimd_partial_state
- */
-ENTRY(fpsimd_save_partial_state)
-	fpsimd_save_partial x0, 1, 8, 9
+#ifdef CONFIG_ARM64_SVE
+SYM_FUNC_START(sve_save_state)
+	sve_save 0, x1, 2
 	ret
-ENDPROC(fpsimd_save_partial_state)
+SYM_FUNC_END(sve_save_state)
 
-/*
- * Load the bottom n FP registers.
- *
- * x0 - pointer to struct fpsimd_partial_state
- */
-ENTRY(fpsimd_load_partial_state)
-	fpsimd_restore_partial x0, 8, 9
+SYM_FUNC_START(sve_load_state)
+	sve_load 0, x1, x2, 3, x4
 	ret
-ENDPROC(fpsimd_load_partial_state)
+SYM_FUNC_END(sve_load_state)
 
-#ifdef CONFIG_ENABLE_FP_SIMD_SETTINGS
-ENTRY(fpsimd_enable_trap)
-	mrs x0, cpacr_el1
-	bic x0, x0, #(3 << 20)
-	orr x0, x0, #(1 << 20)
-	msr cpacr_el1, x0
+SYM_FUNC_START(sve_get_vl)
+	_sve_rdvl	0, 1
 	ret
-ENDPROC(fpsimd_enable_trap)
-ENTRY(fpsimd_disable_trap)
-	mrs x0, cpacr_el1
-	orr x0, x0, #(3 << 20)
-	msr cpacr_el1, x0
-	ret
-ENDPROC(fpsimd_disable_trap)
-#endif
-
-#endif
+SYM_FUNC_END(sve_get_vl)
+#endif /* CONFIG_ARM64_SVE */

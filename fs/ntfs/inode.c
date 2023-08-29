@@ -44,7 +44,7 @@
 /**
  * ntfs_test_inode - compare two (possibly fake) inodes for equality
  * @vi:		vfs inode which to test
- * @na:		ntfs attribute which is being tested with
+ * @data:		data which is being tested with
  *
  * Compare the ntfs attribute embedded in the ntfs specific part of the vfs
  * inode @vi for equality with the ntfs attribute @na.
@@ -57,8 +57,9 @@
  * NOTE: This function runs with the inode_hash_lock spin lock held so it is not
  * allowed to sleep.
  */
-int ntfs_test_inode(struct inode *vi, ntfs_attr *na)
+int ntfs_test_inode(struct inode *vi, void *data)
 {
+	ntfs_attr *na = data;
 	ntfs_inode *ni;
 
 	if (vi->i_ino != na->mft_no)
@@ -86,7 +87,7 @@ int ntfs_test_inode(struct inode *vi, ntfs_attr *na)
 /**
  * ntfs_init_locked_inode - initialize an inode
  * @vi:		vfs inode to initialize
- * @na:		ntfs attribute which to initialize @vi to
+ * @data:		data which to initialize @vi to
  *
  * Initialize the vfs inode @vi with the values from the ntfs attribute @na in
  * order to enable ntfs_test_inode() to do its work.
@@ -101,8 +102,9 @@ int ntfs_test_inode(struct inode *vi, ntfs_attr *na)
  * NOTE: This function runs with the inode->i_lock spin lock held so it is not
  * allowed to sleep. (Hence the GFP_ATOMIC allocation.)
  */
-static int ntfs_init_locked_inode(struct inode *vi, ntfs_attr *na)
+static int ntfs_init_locked_inode(struct inode *vi, void *data)
 {
+	ntfs_attr *na = data;
 	ntfs_inode *ni = NTFS_I(vi);
 
 	vi->i_ino = na->mft_no;
@@ -145,7 +147,6 @@ static int ntfs_init_locked_inode(struct inode *vi, ntfs_attr *na)
 	return 0;
 }
 
-typedef int (*set_t)(struct inode *, void *);
 static int ntfs_read_locked_inode(struct inode *vi);
 static int ntfs_read_locked_attr_inode(struct inode *base_vi, struct inode *vi);
 static int ntfs_read_locked_index_inode(struct inode *base_vi,
@@ -178,8 +179,8 @@ struct inode *ntfs_iget(struct super_block *sb, unsigned long mft_no)
 	na.name = NULL;
 	na.name_len = 0;
 
-	vi = iget5_locked(sb, mft_no, (test_t)ntfs_test_inode,
-			(set_t)ntfs_init_locked_inode, &na);
+	vi = iget5_locked(sb, mft_no, ntfs_test_inode,
+			ntfs_init_locked_inode, &na);
 	if (unlikely(!vi))
 		return ERR_PTR(-ENOMEM);
 
@@ -239,8 +240,8 @@ struct inode *ntfs_attr_iget(struct inode *base_vi, ATTR_TYPE type,
 	na.name = name;
 	na.name_len = name_len;
 
-	vi = iget5_locked(base_vi->i_sb, na.mft_no, (test_t)ntfs_test_inode,
-			(set_t)ntfs_init_locked_inode, &na);
+	vi = iget5_locked(base_vi->i_sb, na.mft_no, ntfs_test_inode,
+			ntfs_init_locked_inode, &na);
 	if (unlikely(!vi))
 		return ERR_PTR(-ENOMEM);
 
@@ -294,8 +295,8 @@ struct inode *ntfs_index_iget(struct inode *base_vi, ntfschar *name,
 	na.name = name;
 	na.name_len = name_len;
 
-	vi = iget5_locked(base_vi->i_sb, na.mft_no, (test_t)ntfs_test_inode,
-			(set_t)ntfs_init_locked_inode, &na);
+	vi = iget5_locked(base_vi->i_sb, na.mft_no, ntfs_test_inode,
+			ntfs_init_locked_inode, &na);
 	if (unlikely(!vi))
 		return ERR_PTR(-ENOMEM);
 
@@ -560,13 +561,6 @@ static int ntfs_read_locked_inode(struct inode *vi)
 	ntfs_debug("Entering for i_ino 0x%lx.", vi->i_ino);
 
 	/* Setup the generic vfs inode parts now. */
-
-	/*
-	 * This is for checking whether an inode has changed w.r.t. a file so
-	 * that the file can be updated if necessary (compare with f_version).
-	 */
-	vi->i_version = 1;
-
 	vi->i_uid = vol->uid;
 	vi->i_gid = vol->gid;
 	vi->i_mode = 0;
@@ -874,12 +868,12 @@ skip_attr_list_load:
 					ni->itype.index.block_size);
 			goto unm_err_out;
 		}
-		if (ni->itype.index.block_size > PAGE_CACHE_SIZE) {
+		if (ni->itype.index.block_size > PAGE_SIZE) {
 			ntfs_error(vi->i_sb, "Index block size (%u) > "
-					"PAGE_CACHE_SIZE (%ld) is not "
+					"PAGE_SIZE (%ld) is not "
 					"supported.  Sorry.",
 					ni->itype.index.block_size,
-					PAGE_CACHE_SIZE);
+					PAGE_SIZE);
 			err = -EOPNOTSUPP;
 			goto unm_err_out;
 		}
@@ -1246,7 +1240,6 @@ static int ntfs_read_locked_attr_inode(struct inode *base_vi, struct inode *vi)
 	base_ni = NTFS_I(base_vi);
 
 	/* Just mirror the values from the base inode. */
-	vi->i_version	= base_vi->i_version;
 	vi->i_uid	= base_vi->i_uid;
 	vi->i_gid	= base_vi->i_gid;
 	set_nlink(vi, base_vi->i_nlink);
@@ -1513,7 +1506,6 @@ static int ntfs_read_locked_index_inode(struct inode *base_vi, struct inode *vi)
 	ni	= NTFS_I(vi);
 	base_ni = NTFS_I(base_vi);
 	/* Just mirror the values from the base inode. */
-	vi->i_version	= base_vi->i_version;
 	vi->i_uid	= base_vi->i_uid;
 	vi->i_gid	= base_vi->i_gid;
 	set_nlink(vi, base_vi->i_nlink);
@@ -1591,10 +1583,10 @@ static int ntfs_read_locked_index_inode(struct inode *base_vi, struct inode *vi)
 				"two.", ni->itype.index.block_size);
 		goto unm_err_out;
 	}
-	if (ni->itype.index.block_size > PAGE_CACHE_SIZE) {
-		ntfs_error(vi->i_sb, "Index block size (%u) > PAGE_CACHE_SIZE "
+	if (ni->itype.index.block_size > PAGE_SIZE) {
+		ntfs_error(vi->i_sb, "Index block size (%u) > PAGE_SIZE "
 				"(%ld) is not supported.  Sorry.",
-				ni->itype.index.block_size, PAGE_CACHE_SIZE);
+				ni->itype.index.block_size, PAGE_SIZE);
 		err = -EOPNOTSUPP;
 		goto unm_err_out;
 	}
@@ -1863,10 +1855,17 @@ int ntfs_read_inode_mount(struct inode *vi)
 		goto err_out;
 	}
 
+	/* Sanity check offset to the first attribute */
+	if (le16_to_cpu(m->attrs_offset) >= le32_to_cpu(m->bytes_allocated)) {
+		ntfs_error(sb, "Incorrect mft offset to the first attribute %u in superblock.",
+			       le16_to_cpu(m->attrs_offset));
+		goto err_out;
+	}
+
 	/* Need this to sanity check attribute list references to $MFT. */
 	vi->i_generation = ni->seq_no = le16_to_cpu(m->sequence_number);
 
-	/* Provides readpage() and sync_page() for map_mft_record(). */
+	/* Provides readpage() for map_mft_record(). */
 	vi->i_mapping->a_ops = &ntfs_mst_aops;
 
 	ctx = ntfs_attr_get_search_ctx(ni, m);
@@ -1915,6 +1914,10 @@ int ntfs_read_inode_mount(struct inode *vi)
 		}
 		/* Now allocate memory for the attribute list. */
 		ni->attr_list_size = (u32)ntfs_attr_size(a);
+		if (!ni->attr_list_size) {
+			ntfs_error(sb, "Attr_list_size is zero");
+			goto put_err_out;
+		}
 		ni->attr_list = ntfs_malloc_nofs(ni->attr_list_size);
 		if (!ni->attr_list) {
 			ntfs_error(sb, "Not enough memory to allocate buffer "
@@ -2825,11 +2828,11 @@ done:
 	 * for real.
 	 */
 	if (!IS_NOCMTIME(VFS_I(base_ni)) && !IS_RDONLY(VFS_I(base_ni))) {
-		struct timespec now = current_fs_time(VFS_I(base_ni)->i_sb);
+		struct timespec64 now = current_time(VFS_I(base_ni));
 		int sync_it = 0;
 
-		if (!timespec_equal(&VFS_I(base_ni)->i_mtime, &now) ||
-		    !timespec_equal(&VFS_I(base_ni)->i_ctime, &now))
+		if (!timespec64_equal(&VFS_I(base_ni)->i_mtime, &now) ||
+		    !timespec64_equal(&VFS_I(base_ni)->i_ctime, &now))
 			sync_it = 1;
 		VFS_I(base_ni)->i_mtime = now;
 		VFS_I(base_ni)->i_ctime = now;
@@ -2905,7 +2908,7 @@ int ntfs_setattr(struct dentry *dentry, struct iattr *attr)
 	int err;
 	unsigned int ia_valid = attr->ia_valid;
 
-	err = inode_change_ok(vi, attr);
+	err = setattr_prepare(dentry, attr);
 	if (err)
 		goto out;
 	/* We do not support NTFS ACLs yet. */
@@ -2944,14 +2947,14 @@ int ntfs_setattr(struct dentry *dentry, struct iattr *attr)
 		}
 	}
 	if (ia_valid & ATTR_ATIME)
-		vi->i_atime = timespec_trunc(attr->ia_atime,
-				vi->i_sb->s_time_gran);
+		vi->i_atime = timespec64_trunc(attr->ia_atime,
+					       vi->i_sb->s_time_gran);
 	if (ia_valid & ATTR_MTIME)
-		vi->i_mtime = timespec_trunc(attr->ia_mtime,
-				vi->i_sb->s_time_gran);
+		vi->i_mtime = timespec64_trunc(attr->ia_mtime,
+					       vi->i_sb->s_time_gran);
 	if (ia_valid & ATTR_CTIME)
-		vi->i_ctime = timespec_trunc(attr->ia_ctime,
-				vi->i_sb->s_time_gran);
+		vi->i_ctime = timespec64_trunc(attr->ia_ctime,
+					       vi->i_sb->s_time_gran);
 	mark_inode_dirty(vi);
 out:
 	return err;

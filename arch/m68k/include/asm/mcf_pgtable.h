@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _MCF_PGTABLE_H
 #define _MCF_PGTABLE_H
 
@@ -161,7 +162,7 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 	return pte;
 }
 
-#define pmd_set(pmdp, ptep) do {} while (0)
+#define pmd_set(pmdp, ptep) ((void)0)
 
 static inline void pgd_set(pgd_t *pgdp, pmd_t *pmdp)
 {

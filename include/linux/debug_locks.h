@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_DEBUG_LOCKING_H
 #define __LINUX_DEBUG_LOCKING_H
 
@@ -7,9 +8,9 @@
 
 struct task_struct;
 
+#ifdef CONFIG_DEBUG_KERNEL
 extern int debug_locks;
 extern int debug_locks_silent;
-
 
 static inline int __debug_locks_off(void)
 {
@@ -20,6 +21,20 @@ static inline int __debug_locks_off(void)
  * Generic 'turn off all lock debugging' function:
  */
 extern int debug_locks_off(void);
+#else
+static const int debug_locks;
+static const int debug_locks_silent;
+
+static inline int __debug_locks_off(void)
+{
+	return 0;
+}
+
+static inline int debug_locks_off(void)
+{
+	return 0;
+}
+#endif
 
 #define DEBUG_LOCKS_WARN_ON(c)						\
 ({									\

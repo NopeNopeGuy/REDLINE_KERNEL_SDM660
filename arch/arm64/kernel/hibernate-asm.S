@@ -33,12 +33,14 @@
  * Even switching to our copied tables will cause a changed output address at
  * each stage of the walk.
  */
-.macro break_before_make_ttbr_switch zero_page, page_table
-	msr	ttbr1_el1, \zero_page
+.macro break_before_make_ttbr_switch zero_page, page_table, tmp
+	phys_to_ttbr \tmp, \zero_page
+	msr	ttbr1_el1, \tmp
 	isb
-	tlbi	vmalle1is
-	dsb	ish
-	msr	ttbr1_el1, \page_table
+	tlbi	vmalle1
+	dsb	nsh
+	phys_to_ttbr \tmp, \page_table
+	msr	ttbr1_el1, \tmp
 	isb
 .endm
 
@@ -73,12 +75,12 @@
  * x5: physical address of a  zero page that remains zero after resume
  */
 .pushsection    ".hibernate_exit.text", "ax"
-ENTRY(swsusp_arch_suspend_exit)
+SYM_CODE_START(swsusp_arch_suspend_exit)
 	/*
 	 * We execute from ttbr0, change ttbr1 to our copied linear map tables
 	 * with a break-before-make via the zero page
 	 */
-	break_before_make_ttbr_switch	x5, x0
+	break_before_make_ttbr_switch	x5, x0, x6
 
 	mov	x21, x1
 	mov	x30, x2
@@ -96,7 +98,7 @@ ENTRY(swsusp_arch_suspend_exit)
 
 	add	x1, x10, #PAGE_SIZE
 	/* Clean the copied page to PoU - based on flush_icache_range() */
-	dcache_line_size x2, x3
+	raw_dcache_line_size x2, x3
 	sub	x3, x2, #1
 	bic	x4, x10, x3
 2:	dc	cvau, x4	/* clean D line / unified line */
@@ -109,7 +111,7 @@ ENTRY(swsusp_arch_suspend_exit)
 	dsb	ish		/* wait for PoU cleaning to finish */
 
 	/* switch to the restored kernels page tables */
-	break_before_make_ttbr_switch	x25, x21
+	break_before_make_ttbr_switch	x25, x21, x6
 
 	ic	ialluis
 	dsb	ish
@@ -120,7 +122,7 @@ ENTRY(swsusp_arch_suspend_exit)
 3:	ret
 
 	.ltorg
-ENDPROC(swsusp_arch_suspend_exit)
+SYM_CODE_END(swsusp_arch_suspend_exit)
 
 /*
  * Restore the hyp stub.
@@ -129,15 +131,15 @@ ENDPROC(swsusp_arch_suspend_exit)
  *
  * x24: The physical address of __hyp_stub_vectors
  */
-el1_sync:
+SYM_CODE_START_LOCAL(el1_sync)
 	msr	vbar_el2, x24
 	eret
-ENDPROC(el1_sync)
+SYM_CODE_END(el1_sync)
 
 .macro invalid_vector	label
-\label:
+SYM_CODE_START_LOCAL(\label)
 	b \label
-ENDPROC(\label)
+SYM_CODE_END(\label)
 .endm
 
 	invalid_vector	el2_sync_invalid
@@ -151,7 +153,7 @@ ENDPROC(\label)
 
 /* el2 vectors - switch el2 here while we restore the memory image. */
 	.align 11
-ENTRY(hibernate_el2_vectors)
+SYM_CODE_START(hibernate_el2_vectors)
 	ventry	el2_sync_invalid		// Synchronous EL2t
 	ventry	el2_irq_invalid			// IRQ EL2t
 	ventry	el2_fiq_invalid			// FIQ EL2t
@@ -171,6 +173,6 @@ ENTRY(hibernate_el2_vectors)
 	ventry	el1_irq_invalid			// IRQ 32-bit EL1
 	ventry	el1_fiq_invalid			// FIQ 32-bit EL1
 	ventry	el1_error_invalid		// Error 32-bit EL1
-END(hibernate_el2_vectors)
+SYM_CODE_END(hibernate_el2_vectors)
 
 .popsection

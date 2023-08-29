@@ -1,39 +1,54 @@
 menu "Xiaomi board selection"
 
-config KERNEL_XIAOMI_A26X
-	bool "Custom for a26x board"
+config MACH_XIAOMI
+	bool "Xiaomi device"
 	depends on ARCH_QCOM
-	default n
 	help
-	  Say Y to enable support for Xiaomi MIA2 & MI6X.
+	  Support for Xiaomi products
 
-	  If in doubt, say N.
-
-config KERNEL_XIAOMI_LAVENDER
-	bool "Custom for lavender board"
-	depends on ARCH_QCOM
-	default n
+config MACH_XIAOMI_SDM660
+	bool "Xiaomi SDM660"
+	depends on ARCH_SDM660
+	select MACH_XIAOMI
 	help
-	  Say Y to enable support for Xiaomi Redmi Note 7.
+	  Support for Xiaomi SDM660 devices
 
-	  If in doubt, say N.
-
-config KERNEL_XIAOMI_TULIP
-	bool "Custom for tulip board"
-	depends on ARCH_QCOM
-	default n
+config MACH_LONGCHEER
+	bool "Longcheer board"
+	select MACH_XIAOMI_SDM660
 	help
-	  Say Y to enable support for Xiaomi Redmi Note 6 Pro
+	  Support for Longcheer boards
 
-	  If in doubt, say N.
-
-config KERNEL_XIAOMI_WHYRED
-	bool "Custom for whyred board"
-	depends on ARCH_QCOM
-	default n
+config MACH_XIAOMI_LAVENDER
+	bool "Xiaomi lavender board"
+	select MACH_LONGCHEER
 	help
-	  Say Y to enable support for Xiaomi Redmi Note 5 Pro / AI
+	  Support for Xiaomi Redmi Note 7
 
-	  If in doubt, say N.
+config MACH_XIAOMI_TULIP
+	bool "Xiaomi tulip board"
+	select MACH_LONGCHEER
+	help
+	  Support for Xiaomi Redmi Note 6 Pro
+
+config MACH_XIAOMI_WHYRED
+	bool "Xiaomi whyred board"
+	select MACH_LONGCHEER
+	help
+	  Support for Xiaomi Redmi Note 5 (Pro)
+
+config MACH_XIAOMI_WAYNE
+	bool "Xiaomi wayne board"
+	select MACH_LONGCHEER
+	help
+	  Support for Xiaomi MI A2 and Mi 6X
 
 endmenu
+
+comment "Xiaomi Optimization Features"
+
+config PERF_HUMANTASK
+	bool "Xiaomi's perf humantask feature"
+	depends on MACH_XIAOMI
+	help
+	  Support for Xiaomi's perf humantask feature.

@@ -1,5 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _H8300_PGTABLE_H
 #define _H8300_PGTABLE_H
+#define __ARCH_USE_5LEVEL_HACK
 #include <asm-generic/pgtable-nopud.h>
 #include <asm-generic/pgtable.h>
 #define pgtable_cache_init()   do { } while (0)
@@ -44,6 +46,6 @@ extern int is_in_rom(unsigned long);
 #define	VMALLOC_START	0
 #define	VMALLOC_END	0xffffffff
 
-#define arch_enter_lazy_cpu_mode()    do {} while (0)
+#define arch_enter_lazy_cpu_mode()    ((void)0)
 
 #endif /* _H8300_PGTABLE_H */

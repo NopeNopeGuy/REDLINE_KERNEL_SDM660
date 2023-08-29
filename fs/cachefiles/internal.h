@@ -18,7 +18,8 @@
 
 #include <linux/fscache-cache.h>
 #include <linux/timer.h>
-#include <linux/wait.h>
+#include <linux/wait_bit.h>
+#include <linux/cred.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
 
@@ -66,6 +67,8 @@ struct cachefiles_cache {
 	struct rb_root			active_nodes;	/* active nodes (can't be culled) */
 	rwlock_t			active_lock;	/* lock for active_nodes */
 	atomic_t			gravecounter;	/* graveyard uniquifier */
+	atomic_t			f_released;	/* number of objects released lately */
+	atomic_long_t			b_released;	/* number of blocks released lately */
 	unsigned			frun_percent;	/* when to stop culling (% files) */
 	unsigned			fcull_percent;	/* when to start culling (% files) */
 	unsigned			fstop_percent;	/* when to stop allocating (% files) */
@@ -94,7 +97,7 @@ struct cachefiles_cache {
  * backing file read tracking
  */
 struct cachefiles_one_read {
-	wait_queue_t			monitor;	/* link into monitored waitqueue */
+	wait_queue_entry_t			monitor;	/* link into monitored waitqueue */
 	struct page			*back_page;	/* backing file page we're waiting for */
 	struct page			*netfs_page;	/* netfs page we're going to fill */
 	struct fscache_retrieval	*op;		/* retrieval op covering this */
@@ -120,6 +123,8 @@ struct cachefiles_xattr {
 	uint8_t				type;
 	uint8_t				data[];
 };
+
+#include <trace/events/cachefiles.h>
 
 /*
  * note change of state for daemon
@@ -157,6 +162,9 @@ extern char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type);
 /*
  * namei.c
  */
+extern void cachefiles_mark_object_inactive(struct cachefiles_cache *cache,
+					    struct cachefiles_object *object,
+					    blkcnt_t i_blocks);
 extern int cachefiles_delete_object(struct cachefiles_cache *cache,
 				    struct cachefiles_object *object);
 extern int cachefiles_walk_to_object(struct cachefiles_object *parent,
@@ -194,8 +202,8 @@ void cachefiles_hist(atomic_t histogram[], unsigned long start_jif)
 
 #else
 #define cachefiles_proc_init()		(0)
-#define cachefiles_proc_cleanup()	do {} while (0)
-#define cachefiles_hist(hist, start_jif) do {} while (0)
+#define cachefiles_proc_cleanup()	((void)0)
+#define cachefiles_hist(hist, start_jif) ((void)0)
 #endif
 
 /*
@@ -354,9 +362,9 @@ do {									\
 
 #else
 
-#define ASSERT(X)			do {} while (0)
-#define ASSERTCMP(X, OP, Y)		do {} while (0)
-#define ASSERTIF(C, X)			do {} while (0)
-#define ASSERTIFCMP(C, X, OP, Y)	do {} while (0)
+#define ASSERT(X)			((void)0)
+#define ASSERTCMP(X, OP, Y)		((void)0)
+#define ASSERTIF(C, X)			((void)0)
+#define ASSERTIFCMP(C, X, OP, Y)	((void)0)
 
 #endif

@@ -14,7 +14,7 @@
  *
  *  going from the lowest priority to the highest.  CPUs in the INVALID state
  *  are not eligible for routing.  The system maintains this state with
- *  a 2 dimensional bitmap (the first for priority class, the second for cpus
+ *  a 2 dimensional bitmap (the first for priority class, the second for CPUs
  *  in that class).  Therefore a typical application without affinity
  *  restrictions can find a suitable CPU with O(1) complexity (e.g. two bit
  *  searches).  For tasks with affinity restrictions, the algorithm has a
@@ -26,14 +26,7 @@
  *  as published by the Free Software Foundation; version 2
  *  of the License.
  */
-
 #include "sched.h"
-
-#include <linux/gfp.h>
-#include <linux/sched.h>
-#include <linux/sched/rt.h>
-#include <linux/slab.h>
-#include "cpupri.h"
 
 /* Convert between a 140 based task->prio, and our 102 based cpupri */
 static int convert_prio(int prio)
@@ -93,7 +86,7 @@ int cpupri_find(struct cpupri *cp, struct task_struct *p,
 {
 	int idx = 0;
 	int task_pri = convert_prio(p->prio);
-	bool drop_nopreempts = task_pri <= MAX_RT_PRIO;
+	bool drop_nopreempts = task_pri <= MAX_RT_PRIO + 1;
 
 	BUG_ON(task_pri >= CPUPRI_NR_PRIORITIES);
 
@@ -133,6 +126,8 @@ retry:
 
 		if (lowest_mask) {
 			cpumask_and(lowest_mask, &p->cpus_allowed, vec->mask);
+			cpumask_andnot(lowest_mask, lowest_mask,
+				       cpu_isolated_mask);
 			if (drop_nopreempts)
 				drop_nopreempt_cpus(lowest_mask);
 			/*
@@ -161,9 +156,9 @@ retry:
 }
 
 /**
- * cpupri_set - update the cpu priority setting
+ * cpupri_set - update the CPU priority setting
  * @cp: The cpupri context
- * @cpu: The target cpu
+ * @cpu: The target CPU
  * @newpri: The priority (INVALID-RT99) to assign to this CPU
  *
  * Note: Assumes cpu_rq(cpu)->lock is locked
@@ -184,7 +179,7 @@ void cpupri_set(struct cpupri *cp, int cpu, int newpri)
 		return;
 
 	/*
-	 * If the cpu was currently mapped to a different value, we
+	 * If the CPU was currently mapped to a different value, we
 	 * need to map it to the new value then remove the old value.
 	 * Note, we must add the new value first, otherwise we risk the
 	 * cpu being missed by the priority loop in cpupri_find.
@@ -242,8 +237,6 @@ int cpupri_init(struct cpupri *cp)
 {
 	int i;
 
-	memset(cp, 0, sizeof(*cp));
-
 	for (i = 0; i < CPUPRI_NR_PRIORITIES; i++) {
 		struct cpupri_vec *vec = &cp->pri_to_cpu[i];
 
@@ -288,5 +281,6 @@ bool cpupri_check_rt(void)
 {
 	int cpu = raw_smp_processor_id();
 
-	return cpu_rq(cpu)->rd->cpupri.cpu_to_pri[cpu] > CPUPRI_NORMAL;
+	return (cpu_rq(cpu)->rd->cpupri.cpu_to_pri[cpu] > CPUPRI_NORMAL) &&
+	       (cpu_rq(cpu)->rt.rt_throttled == 0);
 }

@@ -1,14 +1,6 @@
-/* Copyright (c) 2010-2012, 2014-2015, 2017, 2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2010-2012, 2014-2020, The Linux Foundation. All rights
  */
 
 #define pr_fmt(fmt) "AXI: %s(): " fmt, __func__
@@ -19,6 +11,7 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
+#include <linux/rtmutex.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/hrtimer.h>
@@ -47,6 +40,7 @@ struct msm_bus_cldata {
 	int index;
 	uint32_t clid;
 	int size;
+	int vote_count;
 	struct dentry *file;
 	struct list_head list;
 	char buffer[MAX_BUFF_SIZE];
@@ -66,7 +60,7 @@ LIST_HEAD(fabdata_list);
 LIST_HEAD(cl_list);
 
 /**
- * The following structures and funtions are used for
+ * The following structures and functions are used for
  * the test-client which can be created at run-time.
  */
 
@@ -162,8 +156,8 @@ static uint32_t msm_bus_dbg_register_client(void)
 	requested_vectors[0].dst = init_vectors[0].dst;
 
 	if (!clstate.enable) {
-		MSM_BUS_DBG("Enable bit not set, skipping registration: cl "
-			"%d\n",	clstate.cl);
+		MSM_BUS_DBG("Enable bit not set, skipping registration: cl %d\n"
+			, clstate.cl);
 		return 0;
 	}
 
@@ -191,7 +185,7 @@ static int msm_bus_dbg_mas_set(void  *data, u64 val)
 	clstate.cl = msm_bus_dbg_register_client();
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(shell_client_mas_fops, msm_bus_dbg_mas_get,
+DEFINE_DEBUGFS_ATTRIBUTE(shell_client_mas_fops, msm_bus_dbg_mas_get,
 	msm_bus_dbg_mas_set, "%llu\n");
 
 static int msm_bus_dbg_slv_get(void  *data, u64 *val)
@@ -208,7 +202,7 @@ static int msm_bus_dbg_slv_set(void  *data, u64 val)
 	clstate.cl = msm_bus_dbg_register_client();
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(shell_client_slv_fops, msm_bus_dbg_slv_get,
+DEFINE_DEBUGFS_ATTRIBUTE(shell_client_slv_fops, msm_bus_dbg_slv_get,
 	msm_bus_dbg_slv_set, "%llu\n");
 
 static int msm_bus_dbg_ab_get(void  *data, u64 *val)
@@ -224,7 +218,7 @@ static int msm_bus_dbg_ab_set(void  *data, u64 val)
 	MSM_BUS_DBG("Set ab: %llu\n", val);
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(shell_client_ab_fops, msm_bus_dbg_ab_get,
+DEFINE_DEBUGFS_ATTRIBUTE(shell_client_ab_fops, msm_bus_dbg_ab_get,
 	msm_bus_dbg_ab_set, "%llu\n");
 
 static int msm_bus_dbg_ib_get(void  *data, u64 *val)
@@ -240,7 +234,7 @@ static int msm_bus_dbg_ib_set(void  *data, u64 val)
 	MSM_BUS_DBG("Set ib: %llu\n", val);
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(shell_client_ib_fops, msm_bus_dbg_ib_get,
+DEFINE_DEBUGFS_ATTRIBUTE(shell_client_ib_fops, msm_bus_dbg_ib_get,
 	msm_bus_dbg_ib_set, "%llu\n");
 
 static int msm_bus_dbg_en_get(void  *data, u64 *val)
@@ -270,11 +264,11 @@ static int msm_bus_dbg_en_set(void  *data, u64 val)
 	MSM_BUS_DBG("Set enable: %llu\n", val);
 	return ret;
 }
-DEFINE_SIMPLE_ATTRIBUTE(shell_client_en_fops, msm_bus_dbg_en_get,
+DEFINE_DEBUGFS_ATTRIBUTE(shell_client_en_fops, msm_bus_dbg_en_get,
 	msm_bus_dbg_en_set, "%llu\n");
 
 /**
- * The following funtions are used for viewing the client data
+ * The following functions are used for viewing the client data
  * and changing the client request at run-time
  */
 
@@ -310,14 +304,8 @@ static ssize_t client_data_read(struct file *file, char __user *buf,
 	return ret;
 }
 
-static int client_data_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
-
 static const struct file_operations client_data_fops = {
-	.open		= client_data_open,
+	.open		= simple_open,
 	.read		= client_data_read,
 };
 
@@ -377,7 +365,7 @@ int msm_bus_dbg_rec_transaction(const struct msm_bus_client_handle *pdata,
 			rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 			return -EINVAL;
 		}
-		cldata->file = debugfs_create_file(pdata->name, S_IRUGO,
+		cldata->file = debugfs_create_file(pdata->name, 0444,
 				clients, (void *)pdata, &client_data_fops);
 	}
 
@@ -404,9 +392,6 @@ int msm_bus_dbg_rec_transaction(const struct msm_bus_client_handle *pdata,
 	i += scnprintf(buf + i, MAX_BUFF_SIZE - i, "\n");
 	cldata->size = i;
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
-
-	trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
-		pdata->name, pdata->mas, pdata->slv, ab, ib);
 
 	return i;
 }
@@ -442,6 +427,7 @@ static int msm_bus_dbg_record_client(const struct msm_bus_scale_pdata *pdata,
 	cldata->clid = clid;
 	cldata->file = file;
 	cldata->size = 0;
+	cldata->vote_count = 0;
 	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_add_tail(&cldata->list, &cl_list);
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
@@ -492,10 +478,11 @@ static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
 			MSM_BUS_DBG("Client doesn't have a name\n");
 			return -EINVAL;
 		}
-		cldata->file = msm_bus_dbg_create(pdata->name, S_IRUGO,
+		cldata->file = msm_bus_dbg_create(pdata->name, 0444,
 			clients, clid);
 	}
 
+	cldata->vote_count++;
 	if (cldata->size < (MAX_BUFF_SIZE - FILL_LIMIT))
 		i = cldata->size;
 	else {
@@ -526,14 +513,6 @@ static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
 			pdata->usecase[index].vectors[j].ib);
 	i += scnprintf(buf + i, MAX_BUFF_SIZE - i, "\n");
 
-	for (j = 0; j < pdata->usecase->num_paths; j++)
-		trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
-		pdata->name,
-		pdata->usecase[index].vectors[j].src,
-		pdata->usecase[index].vectors[j].dst,
-		pdata->usecase[index].vectors[j].ab,
-		pdata->usecase[index].vectors[j].ib);
-
 	cldata->index = index;
 	cldata->size = i;
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
@@ -553,10 +532,9 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 	uint32_t clid;
 	ssize_t res = cnt;
 
-	if (!buf || IS_ERR(buf)) {
-		MSM_BUS_ERR("Memory allocation for buffer failed\n");
+	if (!buf)
 		return -ENOMEM;
-	}
+
 	if (cnt == 0) {
 		res = 0;
 		goto out;
@@ -571,13 +549,14 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 
 	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
-		if (strnstr(chid, cldata->pdata->name, cnt)) {
+		if (cldata->pdata &&
+			strnstr(chid, cldata->pdata->name, cnt)) {
 			found = 1;
 			strsep(&chid, " ");
 			if (chid) {
 				ret = kstrtoul(chid, 10, &index);
 				if (ret) {
-					MSM_BUS_DBG("Index conversion"
+					MSM_BUS_DBG("Index conversion\n"
 						" failed\n");
 					rt_mutex_unlock(
 						&msm_bus_dbg_cllist_lock);
@@ -585,12 +564,11 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 					goto out;
 				}
 			} else {
-				MSM_BUS_DBG("Error parsing input. Index not"
+				MSM_BUS_DBG("Error parsing input. Index not\n"
 					" found\n");
 				found = 0;
 			}
-			if ((index < 0) ||
-					(index > cldata->pdata->num_usecases)) {
+			if (index > cldata->pdata->num_usecases) {
 				MSM_BUS_DBG("Invalid index!\n");
 				rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 				res = -EINVAL;
@@ -611,7 +589,7 @@ out:
 }
 
 /**
- * The following funtions are used for viewing the commit data
+ * The following functions are used for viewing the commit data
  * for each fabric
  */
 static ssize_t fabric_data_read(struct file *file, char __user *buf,
@@ -642,7 +620,7 @@ static ssize_t fabric_data_read(struct file *file, char __user *buf,
 }
 
 static const struct file_operations fabric_data_fops = {
-	.open		= client_data_open,
+	.open		= simple_open,
 	.read		= fabric_data_read,
 };
 
@@ -650,6 +628,7 @@ static ssize_t rules_dbg_read(struct file *file, char __user *buf,
 	size_t count, loff_t *ppos)
 {
 	ssize_t ret;
+
 	memset(rules_buf, 0, MAX_BUFF_SIZE);
 	print_rules_buf(rules_buf, MAX_BUFF_SIZE);
 	ret = simple_read_from_buffer(buf, count, ppos,
@@ -657,14 +636,8 @@ static ssize_t rules_dbg_read(struct file *file, char __user *buf,
 	return ret;
 }
 
-static int rules_dbg_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
-
 static const struct file_operations rules_dbg_fops = {
-	.open		= rules_dbg_open,
+	.open		= simple_open,
 	.read		= rules_dbg_read,
 };
 
@@ -755,15 +728,9 @@ static int msm_bus_dbg_fill_fab_buffer(const char *fabname,
 }
 
 static const struct file_operations msm_bus_dbg_update_request_fops = {
-	.open = client_data_open,
+	.open = simple_open,
 	.write = msm_bus_dbg_update_request_write,
 };
-
-static int msm_bus_dbg_dump_clients_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
 
 static ssize_t msm_bus_dbg_dump_clients_read(struct file *file,
 	char __user *buf, size_t count, loff_t *ppos)
@@ -777,29 +744,13 @@ static ssize_t msm_bus_dbg_dump_clients_read(struct file *file,
 	if (*ppos)
 		goto exit_dump_clients_read;
 
-	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
-	list_for_each_entry(cldata, &cl_list, list) {
-		if (IS_ERR_OR_NULL(cldata->pdata))
-			continue;
-		for (j = 0; j < cldata->pdata->usecase->num_paths; j++) {
-			if (cldata->index == -1)
-				continue;
-			trace_bus_client_status(
-			cldata->pdata->name,
-			cldata->pdata->usecase[cldata->index].vectors[j].src,
-			cldata->pdata->usecase[cldata->index].vectors[j].dst,
-			cldata->pdata->usecase[cldata->index].vectors[j].ab,
-			cldata->pdata->usecase[cldata->index].vectors[j].ib,
-			cldata->pdata->active_only);
-		}
-	}
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 exit_dump_clients_read:
 	return simple_read_from_buffer(buf, count, ppos, msg, cnt);
 }
 
 static const struct file_operations msm_bus_dbg_dump_clients_fops = {
-	.open		= msm_bus_dbg_dump_clients_open,
+	.open		= simple_open,
 	.read		= msm_bus_dbg_dump_clients_read,
 };
 
@@ -889,26 +840,26 @@ static int __init msm_bus_debugfs_init(void)
 		goto err;
 	}
 
-	if (debugfs_create_file("print_rules", S_IRUGO | S_IWUSR,
+	if (debugfs_create_file("print_rules", 0644,
 		rules_dbg, &val, &rules_dbg_fops) == NULL)
 		goto err;
 
-	if (debugfs_create_file("update_request", S_IRUGO | S_IWUSR,
+	if (debugfs_create_file("update_request", 0644,
 		shell_client, &val, &shell_client_en_fops) == NULL)
 		goto err;
-	if (debugfs_create_file("ib", S_IRUGO | S_IWUSR, shell_client, &val,
+	if (debugfs_create_file("ib", 0644, shell_client, &val,
 		&shell_client_ib_fops) == NULL)
 		goto err;
-	if (debugfs_create_file("ab", S_IRUGO | S_IWUSR, shell_client, &val,
+	if (debugfs_create_file("ab", 0644, shell_client, &val,
 		&shell_client_ab_fops) == NULL)
 		goto err;
-	if (debugfs_create_file("slv", S_IRUGO | S_IWUSR, shell_client,
+	if (debugfs_create_file("slv", 0644, shell_client,
 		&val, &shell_client_slv_fops) == NULL)
 		goto err;
-	if (debugfs_create_file("mas", S_IRUGO | S_IWUSR, shell_client,
+	if (debugfs_create_file("mas", 0644, shell_client,
 		&val, &shell_client_mas_fops) == NULL)
 		goto err;
-	if (debugfs_create_file("update-request", S_IRUGO | S_IWUSR,
+	if (debugfs_create_file("update-request", 0644,
 		clients, NULL, &msm_bus_dbg_update_request_fops) == NULL)
 		goto err;
 
@@ -925,28 +876,28 @@ static int __init msm_bus_debugfs_init(void)
 				MSM_BUS_DBG("Client name not found\n");
 				continue;
 			}
-			cldata->file = msm_bus_dbg_create(cldata->
-				pdata->name, S_IRUGO, clients, cldata->clid);
+			cldata->file = msm_bus_dbg_create(cldata->pdata->name,
+					0444, clients, cldata->clid);
 		} else if (cldata->handle) {
 			if (cldata->handle->name == NULL) {
 				MSM_BUS_DBG("Client doesn't have a name\n");
 				continue;
 			}
 			cldata->file = debugfs_create_file(cldata->handle->name,
-							S_IRUGO, clients,
+							0444, clients,
 							(void *)cldata->handle,
 							&client_data_fops);
 		}
 	}
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 
-	if (debugfs_create_file("dump_clients", S_IRUGO | S_IWUSR,
+	if (debugfs_create_file("dump_clients", 0644,
 		clients, NULL, &msm_bus_dbg_dump_clients_fops) == NULL)
 		goto err;
 
 	mutex_lock(&msm_bus_dbg_fablist_lock);
 	list_for_each_entry(fablist, &fabdata_list, list) {
-		fablist->file = debugfs_create_file(fablist->name, S_IRUGO,
+		fablist->file = debugfs_create_file(fablist->name, 0444,
 			commit, (void *)fablist->name, &fabric_data_fops);
 		if (fablist->file == NULL) {
 			MSM_BUS_DBG("Cannot create files for commit data\n");
@@ -989,5 +940,3 @@ static void __exit msm_bus_dbg_teardown(void)
 }
 module_exit(msm_bus_dbg_teardown);
 MODULE_DESCRIPTION("Debugfs for msm bus scaling client");
-MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Gagan Mac <gmac@codeaurora.org>");
